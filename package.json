@@ -1,0 +1,19 @@
+{
+  "name": "polarplot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.0.1"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "leaflet.geodesic": "^2.7.2",
+    "leaflet.markercluster": "^1.5.3"
+  }
+}

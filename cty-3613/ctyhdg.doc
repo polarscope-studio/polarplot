@@ -1,0 +1,96 @@
+To use this program, simply enter CTYHDG. You will be given instructions.
+
+This program will convert the files CQWW.CTY WAE.CTY and ARRL.CTY that are
+shipped with K1EA's CT program, and will convert the file 0NA.CTY that is
+shipped with K8CC's NA program, to include a little extra information in them.
+
+If you use CT or NA, you probably already know the F10 key will tell you what
+country a callsign belongs to.  This information comes from the .CTY files.
+You may make your own beam heading support by altering these files.  For
+example, you can change:
+
+Spratly Island:           26:   1S:     1S;
+
+to ...
+
+Spratly Island (303):     26:   1S:     1S;
+
+The result is that next time you enter a call starting with 1S and you hit
+F10, you not only see Spratly Island on the screen, but also the beam heading.
+The only problem is that the file is only good for your location, and it takes
+a long time to update all the files.
+
+This is where CTYHDG comes in.  This program contains will update your .CTY
+files with the beam information from whatever latitude and longitude that you
+like.  You will not reduce the available number of QSO's that are available to
+you in either the CT or NA programs.  Not a bad feature for no loss of memory.
+
+If a new country is assigned in the future, you may want to add the country
+and prefix into both the CTYHDG.PRE file and the .CTY files.  In these files,
+use the format shown.  In the CTYHDG.PRE file, do not go past column 26 for
+the country description.  Also note that if a prefix shows up twice in this
+file, only the first one is used.  The country description in this file is
+only used if the original .CTY file contains a country description that goes
+past column 21 (as of version 2.00 of CTYHDG), otherwise the country
+description in the .CTY file is used. If you only update the .CTY file and not
+the CTYHDG.PRE file, don't worry, the program will not destroy your .CTY file.
+You will be informed of the prefix that was not found, and the original prefix
+is transfered with no beam heading information.
+
+If you have any questions or concerns about this program, my address is:
+
+Fred Klassen, VE7VT
+P.O. Box 3543
+Vancouver, BC
+V6B 3X6
+
+To use this program, simply enter CTYHDG. You will be given instructions.
+
+73, and enjoy.
+==============================================================================
+HISTORY:
+******
+On Nov. 20, 1990, I have released CTYHDG version 2.00 with the following
+enhancements:
+
+1. The program will now take the country description from the original
+   .CTY file, rather than from the CTYHDG.PRE file supplied with this program,
+   with the exception of when the original description goes past column 21.
+   In this case, the modified country description doesn't fit, and therefore
+   the country description in CTYHDG.PRE is used.
+
+2. To allow modification of a file that has previously been updated by CTYHDG,
+   the program checks the country description for a '(' character followed by
+   any 3 characters, and then ends with the two characters '):'.  This
+   combination of charcters is unlikely to be used in any other way within
+   the country description, but be aware that a description such as
+   GERMANY (GDR): would not work, as the program would change this to
+   GERMANY (033): rather than GERMANY (GDR) (033):
+
+3. The CTYHDG.PRE file now contains file update instructions.
+
+On Nov. 28, 1990 I released CTYHDG version 2.01. This version fixes a problem
+that shows up with (01e) instead of (100) if the actual calculation was
+between 99.96 and 99.99.
+******
+On Dec. 28, 1990 I released CTYHDG version 3.00 with the following changes:
+
+1. Added support for K8CC's NA program.
+
+2. This version fixes a problem with the prefixes VK, BY, W, UA0 and VE.
+   These countries cover more than one zone, and CT will calculate the actual
+   zone based on the full prefix entered. An example is, VE6 is zone 4, VE7 is
+   zone 3. In CT version 6.22 or older, any beam information added to these
+   prefixes prevents this feature from working. This version has the /O option
+   which will ignore these prefixes so the zone calculation will work for
+   older versions of CT.
+
+3. The program is now simpler to run. The old .CTY file is now copied into a
+   .OLD file, and the original .CTY file is changed. No more manual copying.
+******
+Version 3.01 was only an upgrade to the CTYHDG.PRE file
+******
+Version 3.02 was only an upgrade to the CTYHDG.PRE file
+******
+On July 25, 1991, I upgraded to call VE7VT from VE7CQD. This version 3.03
+reflects these changes.

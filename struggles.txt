@@ -1,0 +1,20 @@
+# POLARLOG SIGNAL RESOLUTION STRUGGLE
+
+**Target Achievement**: 100% Accurate Flag-to-Country Name synchronization using Wikimedia/FlagCDN (ISO 3166-1 alpha-2).
+
+### Current Architecture:
+1.  **Data Source**: ADIF log files with `latest.CALL`, `latest.DXCC` (Numeric ID), and `latest.COUNTRY` (String Name).
+2.  **Mapping Matrix**: A manually curated `DXCC_MAP` in `main.js` that maps numeric IDs and uppercase names to ISO codes.
+3.  **Display Engine**: `src/map-engine.js` fetches flags from `https://flagcdn.com/w160/${iso}.png`.
+
+### THE CORE PROBLEM (Why Chile/Mexico/Brazil fail):
+1.  **Incomplete Matrix**: The current `DXCC_MAP` only has ~50 common countries hardcoded for name-based lookup. Countries like Chile, Mexico, and many others are missing from the mapping table.
+2.  **Log Data Drift**: Log files often have incorrect or non-standard numeric DXCC IDs.
+3.  **Prefix Guessing Stumbles**: When a Name match or Numeric match fails, the engine falls back to `getISOFromCallsign(prefix)`. Many contest stations use non-standard prefixes (e.g., Brazil using ZV4), causing the guessed flag to "drift" to a different country (like Indonesia).
+4.  **Name/Flag Desync**: The UI accurately prints the name (e.g., "Chile") because it draws directly from the raw `latest.COUNTRY` string, but the `iso` logic (which drives the flag) fails to find a match for that specific string and defaults to a wrong guess.
+
+### THE HANDOVER OBJECTIVE:
+We need a **COMPREHENSIVE DXCC_MAP** object for `main.js` that includes:
+- Every international DXCC Numeric ID (ARRL standard) mapped to ISO-2.
+- Every Country Name (in ALL CAPS) mapped to its correct ISO 3166-1 alpha-2 code.
+- This mapping must cover all 340+ DX entities to eliminate all "guessing" logic.

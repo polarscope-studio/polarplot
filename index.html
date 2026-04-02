@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polarplot — Real-time QSO Visualizer</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- CSS Dependencies -->
+    <link rel="stylesheet" href="/style.css">
+
+    <!-- Splash Screen Styles -->
+    <style>
+      .splash {
+        position: fixed; inset: 0; z-index: 9999;
+        background: rgba(0,0,0,0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .splash-card {
+        background: rgba(15,15,25,0.92);
+        border: 1px solid rgba(56,189,248,0.25);
+        border-radius: 16px;
+        box-shadow: 0 0 60px rgba(56,189,248,0.08), 0 0 0 1px rgba(56,189,248,0.06);
+        width: min(680px, 96vw);
+        max-height: 90vh;
+        display: flex; flex-direction: column;
+        overflow: hidden;
+      }
+      .splash-hero {
+        display: flex; align-items: center; gap: 16px;
+        padding: 28px 28px 0;
+      }
+      .splash-logo {
+        width: 52px; height: 52px; object-fit: contain;
+        filter: drop-shadow(0 0 8px rgba(56,189,248,0.5));
+      }
+      .splash-logo-fallback {
+        font-size: 2.4rem; line-height: 1;
+        filter: drop-shadow(0 0 8px rgba(56,189,248,0.5));
+      }
+      .splash-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.6rem; font-weight: 700; letter-spacing: 2px;
+        color: #f0f4ff;
+      }
+      .splash-title span { color: #38bdf8; }
+      .splash-sub {
+        font-size: 0.75rem; color: rgba(255,255,255,0.4);
+        letter-spacing: 1px; text-transform: uppercase; margin-top: 2px;
+      }
+
+      /* Dismissable warning banner */
+      .splash-warning {
+        margin: 16px 28px 0;
+        background: rgba(56,189,248,0.06);
+        border: 1px solid rgba(56,189,248,0.3);
+        border-radius: 8px;
+        padding: 10px 14px;
+        display: flex; align-items: flex-start; gap: 10px;
+        font-size: 0.78rem; color: rgba(255,255,255,0.65);
+        line-height: 1.5;
+      }
+      .splash-warning-icon { color: #38bdf8; font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+      .splash-warning-close {
+        margin-left: auto; flex-shrink: 0;
+        background: none; border: none; cursor: pointer;
+        color: rgba(255,255,255,0.35); font-size: 1rem; line-height: 1;
+        padding: 0; transition: color 0.2s;
+      }
+      .splash-warning-close:hover { color: rgba(255,255,255,0.8); }
+
+      .splash-tabs {
+        display: flex; gap: 4px;
+        padding: 16px 28px 0;
+        border-bottom: 1px solid rgba(56,189,248,0.12);
+      }
+      .splash-tab {
+        background: none; border: none; cursor: pointer;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem; font-weight: 600;
+        letter-spacing: 1px; text-transform: uppercase;
+        color: rgba(255,255,255,0.35);
+        padding: 8px 14px; border-radius: 6px 6px 0 0;
+        border-bottom: 2px solid transparent;
+        transition: color 0.2s, border-color 0.2s;
+      }
+      .splash-tab:hover { color: rgba(255,255,255,0.7); }
+      .splash-tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+
+      .splash-body {
+        flex: 1; overflow-y: auto; padding: 24px 28px;
+        scrollbar-width: thin; scrollbar-color: rgba(56,189,248,0.2) transparent;
+      }
+      .splash-pane { display: none; }
+      .splash-pane.active { display: block; }
+
+      .splash-body h3 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px;
+        color: #38bdf8; margin: 0 0 10px;
+      }
+      .splash-body p {
+        font-size: 0.85rem; color: rgba(255,255,255,0.6);
+        line-height: 1.7; margin: 0 0 16px;
+      }
+      .splash-feature-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;
+      }
+      .splash-feature {
+        background: rgba(56,189,248,0.04);
+        border: 1px solid rgba(56,189,248,0.12);
+        border-radius: 8px; padding: 12px 14px;
+      }
+      .splash-feature strong {
+        display: block; font-size: 0.8rem; color: #f0f4ff; margin-bottom: 4px;
+      }
+      .splash-feature span { font-size: 0.72rem; color: rgba(255,255,255,0.45); line-height: 1.5; }
+      .splash-ctrl-row {
+        display: flex; align-items: center; gap: 14px;
+        padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-size: 0.8rem;
+      }
+      .splash-ctrl-row:last-child { border-bottom: none; }
+      .splash-key {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem; color: #38bdf8;
+        background: rgba(56,189,248,0.08);
+        border: 1px solid rgba(56,189,248,0.25);
+        border-radius: 4px; padding: 3px 8px;
+        white-space: nowrap; flex-shrink: 0; min-width: 110px; text-align: center;
+      }
+      .splash-ctrl-row span { color: rgba(255,255,255,0.55); }
+      .splash-links { display: flex; flex-direction: column; gap: 10px; }
+      .splash-link-row {
+        display: flex; align-items: center; gap: 12px;
+        background: rgba(56,189,248,0.04);
+        border: 1px solid rgba(56,189,248,0.1);
+        border-radius: 8px; padding: 12px 16px;
+        text-decoration: none; color: inherit;
+        transition: border-color 0.2s, background 0.2s;
+      }
+      .splash-link-row:hover {
+        border-color: rgba(56,189,248,0.4);
+        background: rgba(56,189,248,0.08);
+      }
+      .splash-link-icon { font-size: 1.2rem; width: 28px; text-align: center; flex-shrink: 0; }
+      .splash-link-label { font-size: 0.8rem; color: #f0f4ff; }
+      .splash-link-desc { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 2px; }
+      .splash-changelog-entry { margin-bottom: 18px; }
+      .splash-changelog-ver {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem; color: #38bdf8; letter-spacing: 1px;
+        background: rgba(56,189,248,0.08);
+        border: 1px solid rgba(56,189,248,0.2);
+        border-radius: 4px; padding: 2px 8px;
+        display: inline-block; margin-bottom: 8px;
+      }
+      .splash-changelog-entry ul {
+        margin: 0; padding-left: 18px;
+        font-size: 0.8rem; color: rgba(255,255,255,0.55); line-height: 1.8;
+      }
+
+      .splash-footer {
+        padding: 16px 28px 24px;
+        display: flex; align-items: center; justify-content: space-between;
+        border-top: 1px solid rgba(56,189,248,0.1);
+        gap: 12px;
+      }
+      .splash-footer-note {
+        font-size: 0.7rem; color: rgba(255,255,255,0.25);
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .splash-enter {
+        background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(56,189,248,0.08));
+        border: 1px solid #38bdf8;
+        color: #38bdf8;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.8rem; font-weight: 700;
+        letter-spacing: 2px; text-transform: uppercase;
+        padding: 10px 28px; border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0 0 20px rgba(56,189,248,0.1);
+        transition: background 0.2s, box-shadow 0.2s;
+      }
+      .splash-enter:hover {
+        background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(56,189,248,0.12));
+        box-shadow: 0 0 30px rgba(56,189,248,0.2);
+      }
+      /* Globe station popup */
+      #globe-popup {
+        display: none; position: fixed; z-index: 10000;
+        width: 240px;
+        background: rgba(10,12,22,0.97);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(56,189,248,0.25);
+        border-radius: 10px; overflow: hidden;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(56,189,248,0.06);
+        font-family: 'DM Sans', sans-serif;
+        pointer-events: auto;
+      }
+      .globe-popup-header {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 14px 10px;
+        border-bottom: 1px solid rgba(56,189,248,0.1);
+      }
+      .globe-popup-flag {
+        width: 30px; height: 22px; border-radius: 3px; overflow: hidden;
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; font-size: 0.85rem;
+      }
+      .globe-popup-call { font-size: 1.05rem; font-weight: 700; color: #38bdf8; }
+      .globe-popup-country { font-size: 0.68rem; color: rgba(255,255,255,0.45); margin-top: 1px; }
+      .globe-popup-body { padding: 10px 14px; }
+      .globe-popup-row {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.75rem; margin-bottom: 5px; color: rgba(255,255,255,0.55);
+      }
+      .globe-popup-row:last-child { margin-bottom: 0; }
+      .globe-popup-val {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem; color: #f0f4ff;
+      }
+      .globe-popup-val.accent { color: #38bdf8; font-weight: 700; }
+      .globe-popup-close {
+        position: absolute; top: 8px; right: 10px;
+        background: none; border: none; color: rgba(255,255,255,0.3);
+        cursor: pointer; font-size: 1rem; line-height: 1; padding: 2px;
+        transition: color 0.15s;
+      }
+      .globe-popup-close:hover { color: rgba(255,255,255,0.8); }
+      .globe-popup-cluster { padding: 12px 14px; font-size: 0.78rem; color: rgba(255,255,255,0.6); }
+      .globe-popup-cluster strong { color: #38bdf8; font-size: 1.1rem; }
+
+      /* FPV hint bar */
+      #globe-fpv-hint {
+        display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        z-index: 10001; pointer-events: none;
+        background: rgba(10,12,22,0.9); backdrop-filter: blur(12px);
+        border: 1px solid rgba(56,189,248,0.3); border-radius: 8px;
+        padding: 8px 20px; font-family: 'JetBrains Mono', monospace;
+        font-size: 0.68rem; letter-spacing: 1.5px; text-transform: uppercase;
+        color: rgba(255,255,255,0.5);
+      }
+      #globe-fpv-hint span { color: #38bdf8; }
+
+      /* Globe QTH home beacon — no transform, preserves Globe.gl positioning */
+      @keyframes globeQthPulse {
+        0%, 100% { opacity: 1;   box-shadow: 0 0 6px var(--acc), 0 0 12px var(--acc-glow); }
+        50%       { opacity: 0.6; box-shadow: 0 0 16px var(--acc), 0 0 32px var(--acc-glow), 0 0 48px var(--acc-glow); }
+      }
+      .globe-qth-dot {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: var(--acc);
+        animation: globeQthPulse 1.8s ease-in-out infinite;
+        pointer-events: none;
+      }
+      /* Globe contact dots */
+      .globe-contact-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        border: 1px solid rgba(255,255,255,0.65);
+        opacity: 0.9;
+        cursor: pointer; pointer-events: auto;
+      }
+
+      /* FAQ accordion */
+      .faq-item { border-bottom: 1px solid rgba(255,255,255,0.06); }
+      .faq-item:last-child { border-bottom: none; }
+      .faq-q {
+        width: 100%; background: none; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 12px 0; text-align: left;
+        font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600;
+        color: #f0f4ff; transition: color 0.2s;
+      }
+      .faq-q:hover { color: #38bdf8; }
+      .faq-arrow {
+        flex-shrink: 0; font-size: 0.65rem; color: #38bdf8;
+        transition: transform 0.2s; display: inline-block;
+      }
+      .faq-item.open .faq-arrow { transform: rotate(90deg); }
+      .faq-a {
+        display: none; padding: 0 0 14px;
+        font-size: 0.78rem; color: rgba(255,255,255,0.55); line-height: 1.75;
+      }
+      .faq-item.open .faq-a { display: block; }
+
+      /* Password info tooltip */
+      .pwd-info-icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 14px; height: 14px; border-radius: 50%;
+        font-size: 0.6rem; font-style: normal; font-weight: 700;
+        background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.4);
+        color: #38bdf8; cursor: default; line-height: 1; flex-shrink: 0;
+        transition: background 0.2s;
+      }
+      .pwd-info-icon:hover { background: rgba(56,189,248,0.3); }
+      #pwd-tooltip {
+        display: none; position: fixed;
+        width: 240px;
+        background: rgba(10,12,22,0.97);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(56,189,248,0.3);
+        border-radius: 10px; padding: 12px 14px;
+        font-size: 0.72rem; font-weight: 400; font-family: 'DM Sans', sans-serif;
+        color: rgba(255,255,255,0.6); line-height: 1.65;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(56,189,248,0.06);
+        z-index: 99999; pointer-events: none;
+        white-space: normal; text-transform: none; letter-spacing: 0;
+        transition: opacity 0.15s;
+      }
+      #pwd-tooltip strong { color: #f0f4ff; font-weight: 600; }
+      #pwd-tooltip a { color: #38bdf8; text-decoration: none; }
+      #pwd-tooltip a:hover { text-decoration: underline; }
+      #pwd-tooltip::after {
+        content: ''; position: absolute; top: 100%; left: 20px;
+        border: 5px solid transparent; border-top-color: rgba(56,189,248,0.3);
+      }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- JS Dependencies (Priority Loading) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/globe.gl/dist/globe.gl.min.js" defer></script>
+  </head>
+  <body>
+    <!-- Splash Screen -->
+    <div class="splash" id="splashScreen">
+      <div class="splash-card">
+        <div class="splash-hero">
+          <img src="logo.png" alt="Polarlog" class="splash-logo" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+          <span class="splash-logo-fallback" style="display:none;">❄️</span>
+          <div>
+            <div class="splash-title">POLAR<span>PLOT</span></div>
+            <div class="splash-sub">Real-time QSO Visualizer</div>
+          </div>
+        </div>
+
+        <div class="splash-warning" id="splashWarning">
+          <span class="splash-warning-icon">ℹ</span>
+          <span>This mainly works with QRZ ADIFs better. You are not required to have an API key — it is optional.</span>
+          <button class="splash-warning-close" onclick="document.getElementById('splashWarning').style.display='none'" title="Dismiss">✕</button>
+        </div>
+
+        <div class="splash-tabs">
+          <button class="splash-tab active" onclick="showSplashTab('about', this)">About</button>
+          <button class="splash-tab" onclick="showSplashTab('features', this)">Features</button>
+          <button class="splash-tab" onclick="showSplashTab('controls', this)">Controls</button>
+          <button class="splash-tab" onclick="showSplashTab('links', this)">Links</button>
+          <button class="splash-tab" onclick="showSplashTab('changelog', this)">Changelog</button>
+          <button class="splash-tab" onclick="showSplashTab('faq', this)">FAQ</button>
+        </div>
+
+        <div class="splash-body">
+          <!-- About -->
+          <div class="splash-pane active" id="splash-about">
+            <h3>Welcome to Polarplot</h3>
+            <p>Polarplot is a real-time amateur radio QSO visualizer. Drop in your ADIF log file and watch your contacts light up on an interactive world map with geodesic great-circle paths, country flags, clustering, and full station bio lookups.</p>
+            <p>Set your home station callsign and grid square, then import any ADIF file — from QRZ, WSJT-X, N1MM, or any other logging software. Polarplot automatically decodes callsign prefixes, Maidenhead grids, and coordinates to place every station on the map.</p>
+            <h3 style="margin-top:8px;">How to Get Started</h3>
+            <p style="margin-bottom:6px;">1. Enter your callsign and grid square (or GPS coordinates) in the sidebar.</p>
+            <p style="margin-bottom:6px;">2. Drag and drop your <strong style="color:#f0f4ff;">.adi</strong> or <strong style="color:#f0f4ff;">.adif</strong> file onto the drop zone.</p>
+            <p style="margin-bottom:6px;">3. Optionally add your QRZ credentials to resolve missing station data.</p>
+            <p>4. Click the stat cards at the bottom to drill into contacts, countries, bands, and modes.</p>
+          </div>
+
+          <!-- Features -->
+          <div class="splash-pane" id="splash-features">
+            <h3>Core Features</h3>
+            <div class="splash-feature-grid">
+              <div class="splash-feature">
+                <strong>🗺 Interactive Map</strong>
+                <span>Dark Matter tile layer with great-circle geodesic paths to every contact.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>🌐 3D Globe View</strong>
+                <span>Toggle a WebGL globe for a stunning planetary QSO overview.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>📡 ADIF Support</strong>
+                <span>Works with QRZ, WSJT-X, N1MM, Log4OM and any standard ADIF export.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>🏳 Country Flags</strong>
+                <span>Auto-resolved from callsign prefix, DXCC field, or grid coordinates.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>🔍 QRZ Lookup</strong>
+                <span>Bulk-resolve missing station data via QRZ XML API (key optional).</span>
+              </div>
+              <div class="splash-feature">
+                <strong>📊 Stats Panels</strong>
+                <span>Drill into total contacts, DXCC entities, bands, and modes worked.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>🎨 5 Themes</strong>
+                <span>Dark, Light, Terminal, Space, and Amber — switch with one click.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>⚡ Fast Parsing</strong>
+                <span>Web Worker streams large ADIF files without blocking the UI.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="splash-pane" id="splash-controls">
+            <h3>Map Controls</h3>
+            <div class="splash-ctrl-row"><span class="splash-key">Drag</span><span>Pan the map</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Scroll / Pinch</span><span>Zoom in and out</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Click Marker</span><span>Open station card popup</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">📜 Show All QSOs</span><span>Open the Biography Vault for that callsign</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Home Beacon</span><span>Click to fit map around all contacts</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">🌐 Globe Button</span><span>Toggle between 2D map and 3D globe</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Layers Button</span><span>Switch map tile overlays</span></div>
+            <h3 style="margin-top:16px;">Sidebar Controls</h3>
+            <div class="splash-ctrl-row"><span class="splash-key">Contact Paths</span><span>Toggle geodesic great-circle lines</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Map Clustering</span><span>Group nearby markers into clusters</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">KM / MI</span><span>Switch distance unit display</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Callsign Search</span><span>Filter map by callsign prefix</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Country Filter</span><span>Show only a specific DXCC entity</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Band Chips</span><span>Toggle individual band visibility</span></div>
+          </div>
+
+          <!-- Links -->
+          <div class="splash-pane" id="splash-links">
+            <h3>Resources &amp; Community</h3>
+            <div class="splash-links">
+              <a class="splash-link-row" href="https://www.youtube.com/@M7PXZ" target="_blank" rel="noopener">
+                <span class="splash-link-icon">▶</span>
+                <div>
+                  <div class="splash-link-label">YouTube — M7PXZ</div>
+                  <div class="splash-link-desc">Tutorials, demos, and amateur radio content</div>
+                </div>
+              </a>
+              <a class="splash-link-row" href="https://www.qrz.com" target="_blank" rel="noopener">
+                <span class="splash-link-icon">📡</span>
+                <div>
+                  <div class="splash-link-label">QRZ.com</div>
+                  <div class="splash-link-desc">Download your ADIF log and manage your callsign page</div>
+                </div>
+              </a>
+              <a class="splash-link-row" href="https://paypal.me/M7PXZ" target="_blank" rel="noopener">
+                <span class="splash-link-icon">☕</span>
+                <div>
+                  <div class="splash-link-label">Support Development</div>
+                  <div class="splash-link-desc">Buy me a coffee — keep Polarplot free and improving</div>
+                </div>
+              </a>
+              <a class="splash-link-row" href="https://github.com" target="_blank" rel="noopener">
+                <span class="splash-link-icon">🐙</span>
+                <div>
+                  <div class="splash-link-label">GitHub</div>
+                  <div class="splash-link-desc">Source code, issues, and contributions</div>
+                </div>
+              </a>
+            </div>
+          </div>
+
+          <!-- Changelog -->
+          <div class="splash-pane" id="splash-changelog">
+            <h3>Version History</h3>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.2.0 — Latest</div>
+              <ul>
+                <li>Added 3D Globe view via Globe.gl WebGL renderer</li>
+                <li>Expanded PREFIX_MAP to cover all ITU amateur prefixes</li>
+                <li>Coordinate bounding-box fallback for unknown callsigns</li>
+                <li>Streaming ADIF Web Worker for large log files</li>
+                <li>Bulk QRZ resolve with live progress counter</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.1.0</div>
+              <ul>
+                <li>5 theme system: Dark, Light, Terminal, Space, Amber</li>
+                <li>Biography Vault — full QSO history per callsign</li>
+                <li>Band spectrum filter chips</li>
+                <li>Stats panels for DXCC, bands, and modes</li>
+                <li>Geodesic great-circle path rendering</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.0.0</div>
+              <ul>
+                <li>Initial release — ADIF import, Leaflet map, marker clustering</li>
+                <li>QRZ XML API integration</li>
+                <li>Maidenhead grid and callsign prefix resolution</li>
+              </ul>
+            </div>
+          </div>
+          <!-- FAQ -->
+          <div class="splash-pane" id="splash-faq">
+            <h3>Frequently Asked Questions</h3>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                Why are some of my QSOs in the middle of the ocean or in completely the wrong place?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                Polarplot plots stations using the coordinates or Maidenhead grid square stored inside your ADIF file. If a contact was logged without a grid square, and no GPS coordinates were saved, Polarplot falls back to callsign prefix lookup to estimate a country — but it can only place the pin at a rough country-level centroid, not the real station location. Contacts may land in the ocean if the ADIF data contains a malformed grid, a zeroed-out coordinate (0.0, 0.0), or a prefix that maps to an island or coastal nation. The fix is usually to re-export your log from your logging software with grid squares enabled, or use the <strong style="color:#f0f4ff;">RESOLVE MISSING</strong> button with QRZ credentials to pull accurate locations.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                Why does QRZ work better than other logging software exports?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                QRZ exports a well-structured ADIF that includes full GPS coordinates, accurate country names, and DXCC entity data for every contact. Most other logging tools (WSJT-X, N1MM, Log4OM, etc.) export a leaner ADIF that may only contain the grid square or nothing at all — Polarplot then has to infer locations from callsign prefixes alone, which is less precise. QRZ's XML API also lets Polarplot resolve missing station data in bulk and pull live flag and location updates. Other sources are fully supported, but you may see more unknowns and the odd misplaced pin.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                Why are some stations showing as "Unknown Station" with no flag?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                Polarplot resolves country and flag through four methods in order: the COUNTRY field in the ADIF, the callsign prefix, the DXCC numeric code, and finally the contact's coordinates. If all four fail — for example a special event callsign, a maritime mobile station, or an unusual prefix not in the ITU allocation table — the station will display as Unknown. Hitting <strong style="color:#f0f4ff;">RESOLVE MISSING</strong> with QRZ credentials will fix the majority of these automatically.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                Do I need a QRZ account or API key to use Polarplot?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                No. Polarplot works fully offline from your ADIF file with no account required. The QRZ credentials are only needed if you want to use <strong style="color:#f0f4ff;">RESOLVE HOME</strong> (to auto-fill your location) or <strong style="color:#f0f4ff;">RESOLVE MISSING</strong> (to bulk-enrich contacts with real data). A free QRZ account with the XML subscription is enough — the API key field is optional if you log in with username and password instead.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                The map loaded but I can't see any contacts — what's wrong?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                A few things to check: make sure your ADIF file has a valid <strong style="color:#f0f4ff;">&lt;EOH&gt;</strong> header and that contacts end with <strong style="color:#f0f4ff;">&lt;EOR&gt;</strong>. If contacts appear in the stats counter but not on the map, they likely have no grid square or coordinate data — enable <strong style="color:#f0f4ff;">RESOLVE MISSING</strong> to populate them. Also check that the band filter chips are all active (none greyed out) and that no callsign search or country filter is set.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                The 3D globe is laggy — how do I improve performance?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                The globe renders in WebGL and works best with a dedicated GPU. A few things help: make sure <strong style="color:#f0f4ff;">Contact Paths</strong> is turned off in the sidebar before switching to globe view — arc rendering is the heaviest operation. On the globe, arcs are off by default and can be toggled with the arc button in the globe toolbar. If you have thousands of contacts, enabling <strong style="color:#f0f4ff;">Map Clustering</strong> reduces the number of rendered points significantly.
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-q" onclick="toggleFaq(this)">
+                Is my data sent anywhere or stored online?
+                <span class="faq-arrow">▶</span>
+              </button>
+              <div class="faq-a">
+                No. Your ADIF file is parsed entirely in your browser using a local Web Worker — nothing is uploaded. Your QRZ password is never saved and only used to fetch a temporary session token directly from QRZ.com. The only optional persistent storage is your API key (if you tick Remember) and your home location, both saved in your browser's localStorage and never transmitted.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="splash-footer">
+          <span class="splash-footer-note">POLARPLOT // <a href="https://www.qrz.com/db/M7PXZ" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">M7PXZ</a></span>
+          <button class="splash-enter" onclick="closeSplash()">ENTER ›</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="loading-overlay">
+      <div class="loader-content">
+        <div class="loader-logo">❄️</div>
+        <div class="progress-container">
+          <div id="loading-progress-bar"></div>
+        </div>
+        <p id="loading-status">Initializing System...</p>
+      </div>
+    </div>
+
+    <div id="app">
+      <aside id="sidebar" class="sidebar">
+        <header>
+          <div class="hheader">
+            <div class="hicon">
+              <img src="logo.png" alt="Logo" class="main-logo" onerror="this.style.display='none'">
+            </div>
+            <div class="hmeta">
+              <div class="htitle">POLAR<span>PLOT</span></div>
+              <div class="hsub">Real-time QSO Visualizer</div>
+            </div>
+            <div class="tchips">
+              <div class="tchip active" data-t="dark" title="Dark Mode"></div>
+              <div class="tchip" data-t="light" title="Light Mode"></div>
+              <div class="tchip" data-t="terminal" title="Terminal Mode"></div>
+              <div class="tchip" data-t="space" title="Space Mode"></div>
+              <div class="tchip" data-t="amber" title="Amber Mode"></div>
+            </div>
+          </div>
+        </header>
+
+        <section class="controls-section">
+          <h2 class="section-title">Polar Home Node</h2>
+          <div class="field-group">
+            <label for="my-call">Station Callsign</label>
+            <input type="text" id="my-call" class="field-input" placeholder="Your Callsign (e.g. M7PXZ)" style="text-transform: uppercase;">
+          </div>
+          
+          <div class="mode-tabs">
+            <button id="mode-grid" class="scard-btn active">Grid</button>
+            <button id="mode-coords" class="scard-btn">GPS</button>
+          </div>
+
+          <div class="mode-content-stack">
+            <div id="grid-container" class="mode-pane active">
+              <div class="field-group">
+                <label for="my-grid">Maidenhead Grid</label>
+                <input type="text" id="my-grid" class="field-input" placeholder="e.g. IO91vi" maxlength="6">
+              </div>
+            </div>
+
+            <div id="coords-container" class="mode-pane">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                 <div class="field-group">
+                    <label for="my-lat">Latitude</label>
+                    <input type="number" id="my-lat" class="field-input" step="0.000001" placeholder="51.5074">
+                 </div>
+                 <div class="field-group">
+                    <label for="my-lon">Longitude</label>
+                    <input type="number" id="my-lon" class="field-input" step="0.000001" placeholder="-0.1278">
+                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="controls-section">
+          <h2 class="section-title">Visual Options</h2>
+          <div class="field-group" style="flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.5rem;">
+            <label for="chk-paths" style="margin-bottom: 0; cursor: pointer; color: var(--text);">Contact Paths</label>
+            <label class="studio-slider">
+                <input type="checkbox" id="chk-paths">
+                <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="field-group" style="flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.5rem;">
+            <label for="chk-clusters" style="margin-bottom: 0; cursor: pointer; color: var(--text);">Map Clustering</label>
+            <label class="studio-slider">
+                <input type="checkbox" id="chk-clusters" checked>
+                <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="field-group" style="flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 1.5rem;">
+            <label style="margin-bottom: 0; color: var(--text);">Distance Units</label>
+            <div class="mode-tabs" style="width: auto; margin-bottom: 0;">
+                <button id="unit-km" class="active">KM</button>
+                <button id="unit-mi">MI</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="controls-section search-hub">
+          <h2 class="section-title">Tactical Search Hub</h2>
+          <div class="field-group">
+            <label for="search-call">Callsign Research</label>
+            <input type="text" id="search-call" class="field-input" placeholder="Search Callsign (e.g. M7, G4...)">
+          </div>
+          <div class="field-group">
+            <label for="filter-dxcc">Country Specialist</label>
+            <select id="filter-dxcc" class="field-input">
+              <option value="">All Countries</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="controls-section">
+          <h2 class="section-title">Spectrum Filter</h2>
+          <div id="band-filter" class="band-chips">
+            <button class="band-chip active" data-band="2200M" style="--chip-color: #4B0082;">2200m</button>
+            <button class="band-chip active" data-band="630M" style="--chip-color: #483D8B;">630m</button>
+            <button class="band-chip active" data-band="160M" style="--chip-color: #A020F0;">160m</button>
+            <button class="band-chip active" data-band="80M" style="--chip-color: #0000FF;">80m</button>
+            <button class="band-chip active" data-band="60M" style="--chip-color: #00FFFF;">60m</button>
+            <button class="band-chip active" data-band="40M" style="--chip-color: #008000;">40m</button>
+            <button class="band-chip active" data-band="30M" style="--chip-color: #008080;">30m</button>
+            <button class="band-chip active" data-band="20M" style="--chip-color: #FFFF00;">20m</button>
+            <button class="band-chip active" data-band="17M" style="--chip-color: #FFA500;">17m</button>
+            <button class="band-chip active" data-band="15M" style="--chip-color: #FF0000;">15m</button>
+            <button class="band-chip active" data-band="12M" style="--chip-color: #FF1493;">12m</button>
+            <button class="band-chip active" data-band="10M" style="--chip-color: #8B5CF6;">10m</button>
+            <button class="band-chip active" data-band="6M" style="--chip-color: #B500D0;">6m</button>
+            <button class="band-chip active" data-band="4M" style="--chip-color: #8B008B;">4m</button>
+            <button class="band-chip active" data-band="2M" style="--chip-color: #E20084;">2m</button>
+            <button class="band-chip active" data-band="1.25M" style="--chip-color: #FF1493;">1.25m</button>
+            <button class="band-chip active" data-band="70CM" style="--chip-color: #E2001E;">70cm</button>
+            <button class="band-chip active" data-band="33CM" style="--chip-color: #FF4500;">33cm</button>
+            <button class="band-chip active" data-band="23CM" style="--chip-color: #FF6347;">23cm</button>
+            <button class="band-chip active" data-band="13CM" style="--chip-color: #FF7F50;">13cm</button>
+            <button class="band-chip active" data-band="9CM" style="--chip-color: #FFA07A;">9cm</button>
+            <button class="band-chip active" data-band="6CM" style="--chip-color: #F08080;">6cm</button>
+            <button class="band-chip active" data-band="3CM" style="--chip-color: #CD5C5C;">3cm</button>
+            <button class="band-chip active" data-band="1.25CM" style="--chip-color: #A52A2A;">1.25cm</button>
+            <button class="band-chip active" data-band="6MM" style="--chip-color: #800000;">6mm</button>
+            <button class="band-chip active" data-band="4MM" style="--chip-color: #556B2F;">4mm</button>
+          </div>
+        </section>
+
+        <section class="controls-section">
+          <h2 class="section-title">Import Contacts</h2>
+          <div id="dropzone" class="dropzone">
+            <i class="icon-upload">📁</i>
+            <p>Drag & Drop ADIF file</p>
+            <span style="font-size: 0.7rem; color: var(--muted);">or click to browse</span>
+          </div>
+          <input type="file" id="adif-input" style="display: none;" accept=".adif,.adi">
+        </section>
+
+        <div class="stats-grid">
+          <div class="stat-card stat-card-btn" id="card-total" role="button" tabindex="0" title="View all contacts">
+            <div class="stat-label">TOTAL</div>
+            <div id="stat-total" class="stat-value">0</div>
+          </div>
+          <div class="stat-card stat-card-btn" id="card-dxcc" role="button" tabindex="0" title="View countries worked">
+            <div class="stat-label">DXCC</div>
+            <div id="stat-dxcc" class="stat-value">0</div>
+          </div>
+          <div class="stat-card stat-card-btn" id="card-bands" role="button" tabindex="0" title="View bands used">
+            <div class="stat-label">BANDS</div>
+            <div id="stat-bands" class="stat-value">0</div>
+          </div>
+          <div class="stat-card stat-card-btn" id="card-modes" role="button" tabindex="0" title="View modes used">
+            <div class="stat-label">MODES</div>
+            <div id="stat-modes" class="stat-value">0</div>
+          </div>
+        </div>
+
+        <section class="controls-section station-search" style="margin-top: 1rem;">
+          <h2 class="section-title" style="display:flex;align-items:center;gap:6px;">QRZ Research Node
+            <span class="pwd-info-icon" id="qrz-info-icon">ℹ</span>
+          </h2>
+          <div class="field-group" style="display: flex; gap: 8px; margin-top: 5px;">
+            <button id="lookup-btn" class="scard-btn" style="flex: 1;">RESOLVE HOME</button>
+            <button id="bulk-resolve-btn" class="scard-btn" style="flex: 1; border-color: var(--acc); color: var(--acc);">RESOLVE MISSING</button>
+          </div>
+          <div id="resolve-stats" style="font-size: 0.7rem; font-family: var(--font-mono); color: var(--acc); margin-top: 5px; display: none; text-align: center; text-transform: uppercase; letter-spacing: 1px;">
+            STATIONS RESOLVED: 0 / 0
+          </div>
+          <div class="field-group">
+            <label for="qrz-key" style="display:flex;align-items:center;justify-content:space-between;">
+              <span>Direct API/Session Key</span>
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.7rem;color:rgba(255,255,255,0.4);font-weight:400;text-transform:uppercase;letter-spacing:1px;margin-bottom:0;">
+                <input type="checkbox" id="qrz-key-remember" style="accent-color:#38bdf8;width:11px;height:11px;cursor:pointer;">
+                Remember
+              </label>
+            </label>
+            <input type="password" id="qrz-key" class="field-input" placeholder="QRZ XML Key (Optional)" autocomplete="off" spellcheck="false">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div class="field-group">
+              <label for="qrz-user">Username</label>
+              <input type="text" id="qrz-user" name="username" class="field-input" placeholder="QRZ User..." autocomplete="username">
+            </div>
+            <div class="field-group">
+              <label for="qrz-pass" style="display:flex;align-items:center;gap:6px;">Password
+                <span class="pwd-info-icon" id="pwd-info-icon">ℹ</span>
+              </label>
+              <input type="password" id="qrz-pass" name="password" class="field-input" placeholder="Optional" autocomplete="current-password">
+            </div>
+          </div>
+          <div class="field-group" style="margin-top: 8px;">
+            <label for="cors-proxy">Data Proxy</label>
+            <input type="text" id="cors-proxy" class="field-input" placeholder="CORS Proxy URL (optional)..." value="https://cors-anywhere.herokuapp.com/">
+          </div>
+        </section>
+      </aside>
+
+      <div id="map"></div>
+      <div id="globe-container" class="globe-container"></div>
+
+      <!-- Universal Map UI Overlay (Persistent 2D/3D Controls) -->
+      <div class="map-ui-overlay">
+        <!-- Top Right: Overlays & Globe Toggle -->
+        <div class="map-ctrl-group top-right">
+          <button id="ui-btn-layer" class="map-ctrl-btn" title="Map Overlays">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          </button>
+          <button id="ui-btn-globe" class="map-ctrl-btn" title="Toggle 3D Globe">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          </button>
+        </div>
+
+        <!-- Bottom Right: Zoom Controls -->
+        <div class="map-ctrl-group bottom-right">
+          <button id="ui-btn-zoomin" class="map-ctrl-btn" title="Zoom In">+</button>
+          <button id="ui-btn-zoomout" class="map-ctrl-btn" title="Zoom Out">−</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Biography Vault Panel (Frosted Center Modal) -->
+    <aside id="history-panel" class="station-panel">
+      <div class="panel-header">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="p-icon">📜</div>
+          <div>
+            <h2 id="hist-call">N/A</h2>
+            <p id="hist-location">Biography Vault</p>
+          </div>
+        </div>
+        <button id="close-history" class="close-btn">×</button>
+      </div>
+      <div class="panel-content">
+        <div class="history-table-wrapper" style="max-height: 40vh; overflow-y: auto; border: 1px solid var(--brd); border-radius: 4px; background: rgba(0,0,0,0.2);">
+          <table id="qso-history-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem; font-family: var(--font-mono);">
+            <thead>
+              <tr style="background: var(--bg); border-bottom: 2px solid var(--brd);">
+                <th style="padding: 10px 8px; text-align: left; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Session</th>
+                <th style="padding: 10px 8px; text-align: left; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Band/Mode</th>
+                <th style="padding: 10px 8px; text-align: left; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">RST</th>
+                <th style="padding: 10px 8px; text-align: left; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Range</th>
+              </tr>
+            </thead>
+            <tbody id="qso-history-body"></tbody>
+          </table>
+        </div>
+        <div class="stats-grid" style="margin-top: 1.5rem;">
+           <div class="stat-card"><div class="stat-label">Total QSOs</div><div id="hist-total" class="stat-value">0</div></div>
+           <div class="stat-card"><div class="stat-label">Distance</div><div id="hist-dist" class="stat-value">N/A</div></div>
+        </div>
+      </div>
+    </aside>
+
+    <aside id="station-panel" class="station-panel">
+       <div class="panel-header">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="p-icon">👤</div>
+            <h2 id="p-call">N/A</h2>
+          </div>
+          <button id="close-station" class="close-btn">×</button>
+       </div>
+       <div class="panel-content">
+          <div class="field-group">
+            <label for="prof-call">Display Name</label>
+            <input type="text" id="prof-call" class="field-input" disabled>
+          </div>
+          <div class="field-group">
+            <label for="prof-radio">Station Radio</label>
+            <input type="text" id="prof-radio" class="field-input" placeholder="e.g. IC-7300">
+          </div>
+          <div class="field-group">
+            <label for="prof-antenna">Primary Antenna</label>
+            <input type="text" id="prof-antenna" class="field-input" placeholder="e.g. EFHW 40-10m">
+          </div>
+          <div class="field-group">
+            <label for="prof-power">Operating Power</label>
+            <input type="text" id="prof-power" class="field-input" placeholder="e.g. 100W">
+          </div>
+       </div>
+    </aside>
+
+    <!-- Stats Backdrop -->
+    <div id="stats-backdrop" class="stats-backdrop"></div>
+
+    <!-- Stats: Total Contacts Panel -->
+    <aside id="panel-total" class="station-panel stats-modal">
+      <div class="panel-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="p-icon">📋</div>
+          <div>
+            <h2>All Contacts</h2>
+            <p class="hist-location">Unique callsigns worked</p>
+          </div>
+        </div>
+        <button class="close-btn close-stats-btn">×</button>
+      </div>
+      <div class="panel-content" id="panel-total-content" style="padding:0;"></div>
+    </aside>
+
+    <!-- Stats: DXCC Panel -->
+    <aside id="panel-dxcc" class="station-panel stats-modal">
+      <div class="panel-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="p-icon">🌍</div>
+          <div>
+            <h2>Countries Worked</h2>
+            <p class="hist-location">Sorted by contact count</p>
+          </div>
+        </div>
+        <button class="close-btn close-stats-btn">×</button>
+      </div>
+      <div class="panel-content" id="panel-dxcc-content" style="padding:0 1rem 1rem;"></div>
+    </aside>
+
+    <!-- Stats: Bands Panel -->
+    <aside id="panel-bands" class="station-panel stats-modal">
+      <div class="panel-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="p-icon">📡</div>
+          <div>
+            <h2>Bands Used</h2>
+            <p class="hist-location">Sorted by contact count</p>
+          </div>
+        </div>
+        <button class="close-btn close-stats-btn">×</button>
+      </div>
+      <div class="panel-content" id="panel-bands-content" style="padding:0 1rem 1rem;"></div>
+    </aside>
+
+    <!-- Stats: Modes Panel -->
+    <aside id="panel-modes" class="station-panel stats-modal">
+      <div class="panel-header">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="p-icon">🔊</div>
+          <div>
+            <h2>Modes Used</h2>
+            <p class="hist-location">Sorted by contact count</p>
+          </div>
+        </div>
+        <button class="close-btn close-stats-btn">×</button>
+      </div>
+      <div class="panel-content" id="panel-modes-content" style="padding:0 1rem 1rem;"></div>
+    </aside>
+
+    <!-- Map Overlay Picker Panel -->
+    <div id="overlay-picker" class="overlay-picker">
+      <div class="overlay-picker-header">
+        <span>Map Overlays</span>
+        <button id="close-overlay-picker" class="close-btn" style="width:24px;height:24px;font-size:1rem;">×</button>
+      </div>
+      <div id="overlay-grid" class="overlay-picker-grid"></div>
+    </div>
+
+    <!-- Globe station popup -->
+    <div id="globe-popup">
+      <button class="globe-popup-close" onclick="hideGlobePopup()">×</button>
+      <div id="globe-popup-inner"></div>
+    </div>
+
+    <!-- FPV mode hint -->
+    <div id="globe-fpv-hint"><span>DRAG</span> to look around &nbsp;·&nbsp; click <span>FPV</span> button again to exit</div>
+
+    <!-- QRZ Research Node tooltip -->
+    <div id="qrz-tooltip" style="display:none;position:fixed;width:240px;background:rgba(10,12,22,0.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:12px 14px;font-size:0.72rem;font-weight:400;font-family:'DM Sans',sans-serif;color:rgba(255,255,255,0.6);line-height:1.65;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:99999;pointer-events:none;white-space:normal;text-transform:none;letter-spacing:0;">
+      <strong style="color:#f0f4ff;font-weight:600;">QRZ Research Node</strong><br>
+      This panel lets you enrich your contacts with real station data from QRZ.com.<br><br>
+      <strong style="color:#f0f4ff;">RESOLVE HOME</strong> looks up your own callsign and sets your home coordinates.<br><br>
+      <strong style="color:#f0f4ff;">RESOLVE MISSING</strong> bulk-fetches data for any stations that couldn't be identified from your ADIF alone — filling in names, flags, and locations.<br><br>
+      A QRZ account is all you need. The API key and credentials are completely optional.
+      <div style="position:absolute;top:100%;left:20px;border:5px solid transparent;border-top-color:rgba(56,189,248,0.3);"></div>
+    </div>
+
+    <!-- Password info tooltip (fixed, renders over everything) -->
+    <div id="pwd-tooltip">
+      <strong>Your privacy is safe.</strong><br>
+      Polarplot does not store, log, or transmit your password. It is used only to obtain a temporary QRZ session key inside your browser, and is never saved to disk or sent anywhere except QRZ.com directly.<br><br>
+      Check the GitHub repo for more info.
+    </div>
+
+    <script>
+      function showSplashTab(tab, btn) {
+        document.querySelectorAll('.splash-pane').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.splash-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('splash-' + tab).classList.add('active');
+        btn.classList.add('active');
+      }
+      function hideGlobePopup() {
+        document.getElementById('globe-popup').style.display = 'none';
+      }
+
+      function toggleFaq(btn) {
+        const item = btn.closest('.faq-item');
+        const isOpen = item.classList.contains('open');
+        document.querySelectorAll('.faq-item.open').forEach(el => el.classList.remove('open'));
+        if (!isOpen) item.classList.add('open');
+      }
+
+      function closeSplash() {
+        const el = document.getElementById('splashScreen');
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.4s ease';
+        setTimeout(() => el.remove(), 400);
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const icon = document.getElementById('pwd-info-icon');
+        const tip  = document.getElementById('pwd-tooltip');
+        if (!icon || !tip) return;
+
+        function attachTooltip(iconId, tipId) {
+          const ic = document.getElementById(iconId);
+          const tp = document.getElementById(tipId);
+          if (!ic || !tp) return;
+          ic.addEventListener('mouseenter', function() {
+            const r = ic.getBoundingClientRect();
+            const tipW = 240;
+            let left = r.left + r.width / 2 - 20;
+            if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+            if (left < 8) left = 8;
+            tp.style.left = left + 'px';
+            tp.style.top  = (r.top - 8) + 'px';
+            tp.style.transform = 'translateY(-100%)';
+            tp.style.display = 'block';
+          });
+          ic.addEventListener('mouseleave', function() { tp.style.display = 'none'; });
+        }
+
+        attachTooltip('qrz-info-icon', 'qrz-tooltip');
+
+        // API key remember logic
+        const keyInput  = document.getElementById('qrz-key');
+        const keyRemChk = document.getElementById('qrz-key-remember');
+        const savedKey  = localStorage.getItem('polarplot_qrz_key');
+        if (savedKey) {
+          keyInput.value = savedKey;
+          keyRemChk.checked = true;
+        }
+        keyRemChk.addEventListener('change', function() {
+          if (this.checked) {
+            localStorage.setItem('polarplot_qrz_key', keyInput.value);
+          } else {
+            localStorage.removeItem('polarplot_qrz_key');
+          }
+        });
+        keyInput.addEventListener('input', function() {
+          if (keyRemChk.checked) {
+            localStorage.setItem('polarplot_qrz_key', this.value);
+          }
+        });
+
+        attachTooltip('pwd-info-icon', 'pwd-tooltip');
+      });
+    </script>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

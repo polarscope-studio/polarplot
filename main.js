@@ -1,0 +1,1596 @@
+import './style.css';
+import { MapEngine } from './src/map-engine.js';
+import { QRZService } from './src/qrz-service.js';
+
+let mapEngine;
+let worker;
+let currentQSOs = [];
+let searchQuery = '';
+let selectedDXCC = '';
+let isResolving = false;
+let currentUnits = localStorage.getItem('polarlog_units') || 'km';
+
+// Flag rendering — flagcdn primary, Wikimedia Commons fallback
+const FLAG_OVERRIDES = {
+    'gb-eng': 'https://upload.wikimedia.org/wikipedia/en/b/be/Flag_of_England.svg',
+    'gb-sct': 'https://upload.wikimedia.org/wikipedia/commons/1/10/Flag_of_Scotland.svg',
+    'gb-wls': 'https://upload.wikimedia.org/wikipedia/commons/d/dc/Flag_of_Wales.svg',
+    'gb-nir': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Ulster_Banner.svg',
+};
+
+function buildFlagImg(iso, name, cdnWidth, style, onFail) {
+    if (!iso) return '';
+    const src  = FLAG_OVERRIDES[iso] || `https://flagcdn.com/w${cdnWidth}/${iso}.png`;
+    const wiki = `https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_${encodeURIComponent((name || '').replace(/\s+/g, '_'))}.svg`;
+    return `<img src="${src}" data-wiki="${wiki}" style="${style}" alt="${name || ''}" onerror="if(!this._w){this._w=1;this.src=this.dataset.wiki;}else{${onFail}}">`;
+}
+
+// Total panel sort state
+let totalSortCol = 'count';
+let totalSortDir = -1;
+
+// 3D Globe state
+let globeInstance = null;
+let globeInitialized = false;
+let globeVisible = false;
+let globeDayMode = true;    // true = day, false = night
+let globeFPVMode = false;
+let globePreFPVPov = null; 
+
+const DXCC_MAP = {
+    // Numeric DXCC Codes -> ISO (Strict ISO 3166-1 Alpha-2)
+    '1': 'ca', '6': 'us', '7': 'al', '10': 'tf', '11': 'an', '12': 'ai', '13': 'aq', '14': 'dz', '15': 'ru', '16': 'as',
+    '17': 'at', '18': 'az', '19': 'ar', '20': 'au', '21': 'at', '24': 'be', '27': 'by', '28': 'bz', '29': 'bj', '30': 'bg',
+    '31': 'bt', '32': 'bo', '33': 'ba', '34': 'bw', '35': 'bv', '36': 'br', '37': 'io', '38': 'bn', '39': 'bi', '40': 'kh',
+    '42': 'cm', '43': 'ca', '44': 'cv', '45': 'ky', '46': 'cf', '47': 'td', '48': 'cl', '49': 'cn', '50': 'cx', '51': 'cc',
+    '52': 'co', '53': 'km', '54': 'ru', '55': 'cg', '56': 'ck', '57': 'cr', '58': 'ci', '59': 'hr', '60': 'bs', '61': 'cu',
+    '62': 'bb', '63': 'cy', '64': 'bm', '65': 'vg', '66': 'ky', '67': 'cz', '68': 'dk', '69': 'dm', '70': 'jm', '71': 'cu',
+    '72': 'do', '74': 'ec', '75': 'eg', '76': 'sv', '77': 'gd', '78': 'ht', '79': 'gp', '80': 'gq', '81': 'ee', '82': 'mq',
+    '84': 'ms', '86': 'aw', '87': 'et', '88': 'fk', '89': 'tc', '90': 'tt', '91': 'fo', '94': 'ag', '97': 'lc', '98': 'vc',
+    '100': 'fi', '104': 'fr', '105': 'tf', '106': 're', '107': 'gp', '108': 'mq', '109': 'pm', '110': 'us', '112': 'tf', '114': 'pf',
+    '115': 'tf', '116': 'tf', '117': 'yt', '118': 'wf', '120': 'ga', '121': 'gm', '122': 'ge', '124': 'gh', '126': 'gi', '128': 'gr',
+    '129': 'gl', '130': 'gd', '131': 'gl', '132': 'gu', '133': 'gt', '135': 'gn', '136': 'gw', '137': 'gy', '138': 'ht', '140': 'hm',
+    '141': 'hn', '142': 'hk', '143': 'hu', '144': 'is', '145': 'in', '146': 'id', '147': 'ir', '148': 'ie', '149': 'pt', '150': 'it',
+    '151': 'it', '152': 'it', '153': 'it', '155': 'ci', '156': 'jm', '157': 'jp', '158': 'jp', '159': 'jo', '160': 'kz',
+    '161': 'ke', '162': 'ki', '163': 'ki', '164': 'ki', '165': 'ki', '166': 'kp', '167': 'kr', '168': 'kw', '169': 'kg', '170': 'la',
+    '171': 'la', '172': 'lb', '173': 'ls', '174': 'lr', '175': 'ly', '176': 'li', '177': 'lt', '178': 'lu', '179': 'mo', '180': 'mk',
+    '181': 'mg', '182': 'mw', '183': 'my', '184': 'my', '185': 'mv', '186': 'ml', '187': 'mt', '188': 'mh', '189': 'mr', '190': 'mu',
+    '191': 'mx', '192': 'fm', '193': 'fm', '194': 'fm', '195': 'fm', '196': 'md', '197': 'mc', '198': 'mn', '201': 'ma', '202': 'pr',
+    '203': 'mz', '204': 'mm', '205': 'na', '206': 'nr', '209': 'cw', '211': 'nl', '212': 'nl', '213': 'mf', '214': 'bl', '215': 'nc',
+    '216': 'nz', '217': 'ni', '218': 'ne', '219': 'ng', '220': 'nu', '221': 'nf', '222': 'no', '223': 'gb-eng', '224': 'om', '225': 'pk',
+    '226': 'pw', '227': 'pa', '228': 'pg', '229': 'py', '230': 'de', '231': 'pe', '232': 'ph', '233': 'pn', '234': 'pl', '235': 'pt',
+    '236': 'pt', '237': 'pt', '238': 'pt', '239': 'gr', '241': 'qa', '242': 're', '243': 'ro', '244': 'lv', '245': 'rw', '246': 'sh', 
+    '247': 'kn', '248': 'sx', '249': 'lc', '250': 'sh', '251': 'vc', '252': 'ws', '253': 'sm', '254': 'st', '255': 'sa', '256': 'sn', 
+    '257': 'sc', '258': 'sl', '259': 'sg', '260': 'sk', '261': 'si', '262': 'sb', '263': 'so', '264': 'za', '265': 'gb-nir', '266': 'gs', 
+    '267': 'lk', '268': 'sd', '269': 'sr', '270': 'sj', '271': 'sz', '272': 'se', '273': 'ch', '274': 'sy', '275': 'tw', '276': 'tj', 
+    '277': 'tz', '278': 'th', '279': 'gb-sct', '280': 'tg', '281': 'es', '282': 'to', '283': 'tt', '284': 'tn', '285': 'vi', '286': 'tr', 
+    '287': 'tm', '288': 'tc', '289': 'tv', '290': 'gl', '291': 'us', '292': 'ug', '293': 'ua', '294': 'gb-wls', '295': 'ae', '296': 'gb', 
+    '297': 'uy', '298': 'uz', '299': 'vu', '300': 'va', '301': 've', '302': 'vn', '303': 'vi', '304': 'wk', '305': 'wf', '306': 'eh', 
+    '307': 'ye', '308': 'ye', '309': 'ye', '310': 'zm', '311': 'zw', '312': 'rs', '313': 'me', '318': 'ru', '339': 'id',
+
+    // Name Fallbacks — comprehensive DXCC name-to-ISO-3166-1-alpha-2 mapping
+    // Europe
+    'UNITED KINGDOM': 'gb', 'UK': 'gb', 'GBR': 'gb',
+    'ENGLAND': 'gb-eng', 'SCOTLAND': 'gb-sct', 'WALES': 'gb-wls', 'NORTHERN IRELAND': 'gb-nir',
+    'GERMANY': 'de', 'DEU': 'de', 'FEDERAL REPUBLIC OF GERMANY': 'de', 'FED. REP. OF GERMANY': 'de', 'FED REP OF GERMANY': 'de',
+    'FRANCE': 'fr', 'FRA': 'fr',
+    'ITALY': 'it', 'ITA': 'it', 'SARDINIA': 'it', 'SICILY': 'it',
+    'SPAIN': 'es', 'ESP': 'es',
+    'PORTUGAL': 'pt', 'PRT': 'pt', 'AZORES': 'pt', 'MADEIRA': 'pt',
+    'SWITZERLAND': 'ch', 'CHE': 'ch',
+    'SWEDEN': 'se', 'SWE': 'se',
+    'NORWAY': 'no', 'NOR': 'no', 'SVALBARD': 'sj',
+    'DENMARK': 'dk', 'DNK': 'dk',
+    'FINLAND': 'fi', 'FIN': 'fi', 'ALAND ISLANDS': 'ax', 'MARKET REEF': 'ax',
+    'NETHERLANDS': 'nl', 'NLD': 'nl', 'HOLLAND': 'nl',
+    'AUSTRIA': 'at', 'AUT': 'at',
+    'BELGIUM': 'be', 'BEL': 'be',
+    'LUXEMBOURG': 'lu', 'LUX': 'lu',
+    'IRELAND': 'ie', 'IRL': 'ie', 'REPUBLIC OF IRELAND': 'ie',
+    'ICELAND': 'is', 'ISL': 'is',
+    'GREENLAND': 'gl', 'GRL': 'gl',
+    'FAROE ISLANDS': 'fo', 'FRO': 'fo', 'FAROES': 'fo',
+    'RUSSIA': 'ru', 'RUS': 'ru', 'RUSSIAN FEDERATION': 'ru',
+    'UKRAINE': 'ua', 'UKR': 'ua',
+    'POLAND': 'pl', 'POL': 'pl',
+    'CZECH REPUBLIC': 'cz', 'CZE': 'cz', 'CZECHIA': 'cz',
+    'SLOVAKIA': 'sk', 'SVK': 'sk',
+    'HUNGARY': 'hu', 'HUN': 'hu',
+    'ROMANIA': 'ro', 'ROU': 'ro',
+    'BULGARIA': 'bg', 'BGR': 'bg',
+    'SERBIA': 'rs', 'SRB': 'rs',
+    'CROATIA': 'hr', 'HRV': 'hr',
+    'SLOVENIA': 'si', 'SVN': 'si',
+    'BOSNIA AND HERZEGOVINA': 'ba', 'BIH': 'ba', 'BOSNIA-HERZEGOVINA': 'ba', 'BOSNIA': 'ba',
+    'NORTH MACEDONIA': 'mk', 'MKD': 'mk', 'MACEDONIA': 'mk',
+    'ALBANIA': 'al', 'ALB': 'al',
+    'GREECE': 'gr', 'GRC': 'gr', 'DODECANESE': 'gr', 'CRETE': 'gr',
+    'MONTENEGRO': 'me', 'MNE': 'me',
+    'KOSOVO': 'xk',
+    'ESTONIA': 'ee', 'EST': 'ee',
+    'LATVIA': 'lv', 'LVA': 'lv',
+    'LITHUANIA': 'lt', 'LTU': 'lt',
+    'BELARUS': 'by', 'BLR': 'by',
+    'MOLDOVA': 'md', 'MDA': 'md',
+    'LIECHTENSTEIN': 'li', 'LIE': 'li',
+    'MONACO': 'mc', 'MCO': 'mc',
+    'ANDORRA': 'ad', 'AND': 'ad',
+    'SAN MARINO': 'sm', 'SMR': 'sm',
+    'VATICAN': 'va', 'VAT': 'va', 'VATICAN CITY': 'va',
+    'MALTA': 'mt', 'MLT': 'mt',
+    'CYPRUS': 'cy', 'CYP': 'cy',
+    'GEORGIA': 'ge', 'GEO': 'ge',
+    'ARMENIA': 'am', 'ARM': 'am',
+    'AZERBAIJAN': 'az', 'AZE': 'az',
+    'GIBRALTAR': 'gi', 'GIB': 'gi',
+
+    // North America & Caribbean
+    'UNITED STATES': 'us', 'USA': 'us', 'UNITED STATES OF AMERICA': 'us',
+    'CANADA': 'ca', 'CAN': 'ca',
+    'MEXICO': 'mx', 'MEX': 'mx',
+    'CUBA': 'cu', 'CUB': 'cu',
+    'JAMAICA': 'jm', 'JAM': 'jm',
+    'HAITI': 'ht', 'HTI': 'ht',
+    'DOMINICAN REPUBLIC': 'do', 'DOM': 'do',
+    'PUERTO RICO': 'pr', 'PRI': 'pr',
+    'BARBADOS': 'bb', 'BRB': 'bb',
+    'TRINIDAD AND TOBAGO': 'tt', 'TTO': 'tt', 'TRINIDAD': 'tt', 'TOBAGO': 'tt',
+    'GRENADA': 'gd', 'GRD': 'gd',
+    'SAINT LUCIA': 'lc', 'LCA': 'lc', 'ST. LUCIA': 'lc', 'ST LUCIA': 'lc',
+    'SAINT VINCENT AND THE GRENADINES': 'vc', 'VCT': 'vc', 'ST. VINCENT': 'vc', 'ST VINCENT': 'vc',
+    'SAINT KITTS AND NEVIS': 'kn', 'KNA': 'kn', 'ST. KITTS': 'kn', 'NEVIS': 'kn',
+    'ANTIGUA AND BARBUDA': 'ag', 'ATG': 'ag', 'ANTIGUA': 'ag',
+    'DOMINICA': 'dm', 'DMA': 'dm',
+    'BAHAMAS': 'bs', 'BHS': 'bs',
+    'BERMUDA': 'bm', 'BMU': 'bm',
+    'CAYMAN ISLANDS': 'ky', 'CYM': 'ky',
+    'TURKS AND CAICOS ISLANDS': 'tc', 'TCA': 'tc', 'TURKS AND CAICOS': 'tc',
+    'BRITISH VIRGIN ISLANDS': 'vg', 'VGB': 'vg',
+    'US VIRGIN ISLANDS': 'vi', 'VIR': 'vi', 'UNITED STATES VIRGIN ISLANDS': 'vi', 'U.S. VIRGIN ISLANDS': 'vi',
+    'ARUBA': 'aw', 'ABW': 'aw',
+    'CURACAO': 'cw', 'CUW': 'cw',
+    'SINT MAARTEN': 'sx', 'SXM': 'sx',
+    'GUADELOUPE': 'gp', 'GLP': 'gp',
+    'MARTINIQUE': 'mq', 'MTQ': 'mq',
+    'SAINT BARTHELEMY': 'bl', 'BLM': 'bl', 'ST. BARTHELEMY': 'bl',
+    'SAINT MARTIN': 'mf', 'MAF': 'mf',
+    'MONTSERRAT': 'ms', 'MSR': 'ms',
+    'ANGUILLA': 'ai', 'AIA': 'ai',
+    'BELIZE': 'bz', 'BLZ': 'bz',
+    'COSTA RICA': 'cr', 'CRI': 'cr',
+    'EL SALVADOR': 'sv', 'SLV': 'sv',
+    'GUATEMALA': 'gt', 'GTM': 'gt',
+    'HONDURAS': 'hn', 'HND': 'hn',
+    'NICARAGUA': 'ni', 'NIC': 'ni',
+    'PANAMA': 'pa', 'PAN': 'pa',
+    'ALASKA': 'us', 'HAWAII': 'us',
+
+    // South America
+    'BRAZIL': 'br', 'BRA': 'br', 'BRASIL': 'br',
+    'ARGENTINA': 'ar', 'ARG': 'ar',
+    'CHILE': 'cl', 'CHL': 'cl',
+    'PERU': 'pe', 'PER': 'pe',
+    'COLOMBIA': 'co', 'COL': 'co',
+    'VENEZUELA': 've', 've': 've', 'VEN': 've',
+    'ECUADOR': 'ec', 'ECU': 'ec',
+    'BOLIVIA': 'bo', 'BOL': 'bo',
+    'PARAGUAY': 'py', 'PRY': 'py',
+    'URUGUAY': 'uy', 'URY': 'uy',
+    'GUYANA': 'gy', 'GUY': 'gy',
+    'SURINAME': 'sr', 'SUR': 'sr', 'SURINAM': 'sr',
+    'FRENCH GUIANA': 'gf', 'GUF': 'gf',
+    'FALKLAND ISLANDS': 'fk', 'FLK': 'fk', 'FALKLANDS': 'fk', 'ISLAS MALVINAS': 'fk',
+    'SOUTH GEORGIA': 'gs', 'SGS': 'gs', 'SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS': 'gs',
+    'TRINIDAD & TOBAGO': 'tt',
+    'GALAPAGOS': 'ec',
+
+    // Asia
+    'CHINA': 'cn', 'CHN': 'cn', 'PEOPLES REPUBLIC OF CHINA': 'cn', "PEOPLE'S REPUBLIC OF CHINA": 'cn',
+    'JAPAN': 'jp', 'JPN': 'jp', 'OGASAWARA': 'jp', 'MINAMI TORISHIMA': 'jp',
+    'SOUTH KOREA': 'kr', 'KOR': 'kr', 'KOREA': 'kr', 'REPUBLIC OF KOREA': 'kr',
+    'NORTH KOREA': 'kp', 'PRK': 'kp', 'DEMOCRATIC PEOPLES REPUBLIC OF KOREA': 'kp',
+    'TAIWAN': 'tw', 'TWN': 'tw',
+    'HONG KONG': 'hk', 'HKG': 'hk',
+    'MACAU': 'mo', 'MAC': 'mo', 'MACAO': 'mo',
+    'MONGOLIA': 'mn', 'MNG': 'mn',
+    'INDIA': 'in', 'IND': 'in',
+    'PAKISTAN': 'pk', 'PAK': 'pk',
+    'BANGLADESH': 'bd', 'BGD': 'bd',
+    'SRI LANKA': 'lk', 'LKA': 'lk', 'CEYLON': 'lk',
+    'NEPAL': 'np', 'NPL': 'np',
+    'BHUTAN': 'bt', 'BTN': 'bt',
+    'MALDIVES': 'mv', 'MDV': 'mv',
+    'MYANMAR': 'mm', 'MMR': 'mm', 'BURMA': 'mm',
+    'THAILAND': 'th', 'THA': 'th',
+    'VIETNAM': 'vn', 'VNM': 'vn', 'VIET NAM': 'vn',
+    'CAMBODIA': 'kh', 'KHM': 'kh',
+    'LAOS': 'la', 'LAO': 'la',
+    'MALAYSIA': 'my', 'MYS': 'my',
+    'SINGAPORE': 'sg', 'SGP': 'sg',
+    'INDONESIA': 'id', 'IDN': 'id',
+    'PHILIPPINES': 'ph', 'PHL': 'ph',
+    'BRUNEI': 'bn', 'BRN': 'bn', 'BRUNEI DARUSSALAM': 'bn',
+    'EAST TIMOR': 'tl', 'TLS': 'tl', 'TIMOR-LESTE': 'tl',
+    'AFGHANISTAN': 'af', 'AFG': 'af',
+    'IRAN': 'ir', 'IRN': 'ir', 'ISLAMIC REPUBLIC OF IRAN': 'ir',
+    'IRAQ': 'iq', 'IRQ': 'iq',
+    'ISRAEL': 'il', 'ISR': 'il',
+    'JORDAN': 'jo', 'JOR': 'jo',
+    'KUWAIT': 'kw', 'KWT': 'kw',
+    'SAUDI ARABIA': 'sa', 'SAU': 'sa',
+    'BAHRAIN': 'bh', 'BHR': 'bh',
+    'QATAR': 'qa', 'QAT': 'qa',
+    'UNITED ARAB EMIRATES': 'ae', 'ARE': 'ae', 'UAE': 'ae',
+    'OMAN': 'om', 'OMN': 'om',
+    'YEMEN': 'ye', 'YEM': 'ye',
+    'SYRIA': 'sy', 'SYR': 'sy', 'SYRIAN ARAB REPUBLIC': 'sy',
+    'LEBANON': 'lb', 'LBN': 'lb',
+    'TURKEY': 'tr', 'TUR': 'tr', 'TURKIYE': 'tr',
+    'KAZAKHSTAN': 'kz', 'KAZ': 'kz',
+    'UZBEKISTAN': 'uz', 'UZB': 'uz',
+    'TURKMENISTAN': 'tm', 'TKM': 'tm',
+    'KYRGYZSTAN': 'kg', 'KGZ': 'kg',
+    'TAJIKISTAN': 'tj', 'TJK': 'tj',
+
+    // Middle East & Africa
+    'EGYPT': 'eg', 'EGY': 'eg',
+    'LIBYA': 'ly', 'LBY': 'ly',
+    'TUNISIA': 'tn', 'TUN': 'tn',
+    'ALGERIA': 'dz', 'DZA': 'dz',
+    'MOROCCO': 'ma', 'MAR': 'ma',
+    'WESTERN SAHARA': 'eh', 'ESH': 'eh',
+    'MAURITANIA': 'mr', 'MRT': 'mr',
+    'SENEGAL': 'sn', 'SEN': 'sn',
+    'GAMBIA': 'gm', 'GMB': 'gm',
+    'GUINEA-BISSAU': 'gw', 'GNB': 'gw',
+    'GUINEA': 'gn', 'GIN': 'gn',
+    'SIERRA LEONE': 'sl', 'SLE': 'sl',
+    'LIBERIA': 'lr', 'LBR': 'lr',
+    'COTE D\'IVOIRE': 'ci', 'IVORY COAST': 'ci', 'CIV': 'ci',
+    'GHANA': 'gh', 'GHA': 'gh',
+    'TOGO': 'tg', 'TGO': 'tg',
+    'BENIN': 'bj', 'BEN': 'bj',
+    'NIGERIA': 'ng', 'NGA': 'ng',
+    'NIGER': 'ne', 'NER': 'ne',
+    'MALI': 'ml', 'MLI': 'ml',
+    'BURKINA FASO': 'bf', 'BFA': 'bf',
+    'CAPE VERDE': 'cv', 'CPV': 'cv', 'CABO VERDE': 'cv',
+    'SAO TOME AND PRINCIPE': 'st', 'STP': 'st', 'SAO TOME': 'st',
+    'EQUATORIAL GUINEA': 'gq', 'GNQ': 'gq',
+    'CAMEROON': 'cm', 'CMR': 'cm',
+    'CENTRAL AFRICAN REPUBLIC': 'cf', 'CAF': 'cf',
+    'CHAD': 'td', 'TCD': 'td',
+    'SUDAN': 'sd', 'SDN': 'sd',
+    'SOUTH SUDAN': 'ss', 'SSD': 'ss',
+    'ETHIOPIA': 'et', 'ETH': 'et',
+    'ERITREA': 'er', 'ERI': 'er',
+    'DJIBOUTI': 'dj', 'DJI': 'dj',
+    'SOMALIA': 'so', 'SOM': 'so',
+    'KENYA': 'ke', 'KEN': 'ke',
+    'UGANDA': 'ug', 'UGA': 'ug',
+    'RWANDA': 'rw', 'RWA': 'rw',
+    'BURUNDI': 'bi', 'BDI': 'bi',
+    'TANZANIA': 'tz', 'TZA': 'tz',
+    'DEMOCRATIC REPUBLIC OF THE CONGO': 'cd', 'COD': 'cd', 'DR CONGO': 'cd', 'DRC': 'cd', 'ZAIRE': 'cd',
+    'REPUBLIC OF THE CONGO': 'cg', 'COG': 'cg', 'CONGO': 'cg',
+    'GABON': 'ga', 'GAB': 'ga',
+    'ANGOLA': 'ao', 'AGO': 'ao',
+    'ZAMBIA': 'zm', 'ZMB': 'zm',
+    'ZIMBABWE': 'zw', 'ZWE': 'zw',
+    'MALAWI': 'mw', 'MWI': 'mw',
+    'MOZAMBIQUE': 'mz', 'MOZ': 'mz',
+    'MADAGASCAR': 'mg', 'MDG': 'mg',
+    'SOUTH AFRICA': 'za', 'ZAF': 'za',
+    'NAMIBIA': 'na', 'NAM': 'na',
+    'BOTSWANA': 'bw', 'BWA': 'bw',
+    'LESOTHO': 'ls', 'LSO': 'ls',
+    'ESWATINI': 'sz', 'SWZ': 'sz', 'SWAZILAND': 'sz',
+    'COMOROS': 'km', 'COM': 'km',
+    'MAURITIUS': 'mu', 'MUS': 'mu',
+    'SEYCHELLES': 'sc', 'SYC': 'sc',
+    'REUNION': 're', 'REU': 're',
+    'MAYOTTE': 'yt', 'MYT': 'yt',
+    'SAINT HELENA': 'sh', 'SHN': 'sh', 'ST. HELENA': 'sh',
+    'ASCENSION ISLAND': 'sh', 'TRISTAN DA CUNHA': 'sh',
+
+    // Pacific & Oceania
+    'AUSTRALIA': 'au', 'AUS': 'au',
+    'NEW ZEALAND': 'nz', 'NZL': 'nz',
+    'PAPUA NEW GUINEA': 'pg', 'PNG': 'pg',
+    'SOLOMON ISLANDS': 'sb', 'SLB': 'sb',
+    'VANUATU': 'vu', 'VUT': 'vu', 'NEW HEBRIDES': 'vu',
+    'FIJI': 'fj', 'FJI': 'fj',
+    'TONGA': 'to', 'TON': 'to',
+    'SAMOA': 'ws', 'WSM': 'ws', 'WESTERN SAMOA': 'ws',
+    'AMERICAN SAMOA': 'as', 'ASM': 'as',
+    'KIRIBATI': 'ki', 'KIR': 'ki',
+    'TUVALU': 'tv', 'TUV': 'tv',
+    'NAURU': 'nr', 'NRU': 'nr',
+    'PALAU': 'pw', 'PLW': 'pw',
+    'MARSHALL ISLANDS': 'mh', 'MHL': 'mh',
+    'MICRONESIA': 'fm', 'FSM': 'fm', 'FEDERATED STATES OF MICRONESIA': 'fm',
+    'NORTHERN MARIANA ISLANDS': 'mp', 'MNP': 'mp', 'MARIANA ISLANDS': 'mp',
+    'GUAM': 'gu', 'GUM': 'gu',
+    'COOK ISLANDS': 'ck', 'COK': 'ck',
+    'NIUE': 'nu', 'NIU': 'nu',
+    'TOKELAU': 'tk', 'TKL': 'tk',
+    'FRENCH POLYNESIA': 'pf', 'PYF': 'pf', 'TAHITI': 'pf',
+    'NEW CALEDONIA': 'nc', 'NCL': 'nc',
+    'WALLIS AND FUTUNA': 'wf', 'WLF': 'wf',
+    'NORFOLK ISLAND': 'nf', 'NFK': 'nf',
+    'PITCAIRN': 'pn', 'PCN': 'pn', 'PITCAIRN ISLANDS': 'pn',
+    'CHRISTMAS ISLAND': 'cx', 'CXR': 'cx',
+    'COCOS ISLANDS': 'cc', 'CCK': 'cc', 'COCOS (KEELING) ISLANDS': 'cc',
+    'HEARD ISLAND': 'hm', 'HMD': 'hm',
+    'WAKE ISLAND': 'us',
+    'JOHNSTON ISLAND': 'us',
+    'MIDWAY ISLAND': 'us', 'MIDWAY ISLANDS': 'us',
+
+    // Antarctic / Special
+    'ANTARCTICA': 'aq', 'ATA': 'aq',
+    'BOUVET ISLAND': 'bv', 'BVT': 'bv',
+    'KERGUELEN': 'tf', 'CROZET ISLAND': 'tf', 'AMSTERDAM AND ST. PAUL ISLANDS': 'tf', 'FRENCH SOUTHERN TERRITORIES': 'tf',
+};
+
+// Reverse lookup: ISO code → display country name (built from DXCC_MAP, picks first multi-char name per ISO)
+const _tc = s => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+const ISO_TO_NAME = {};
+for (const [key, iso] of Object.entries(DXCC_MAP)) {
+    if (!ISO_TO_NAME[iso] && isNaN(Number(key)) && key.length > 3) {
+        ISO_TO_NAME[iso] = _tc(key);
+    }
+}
+
+const PREFIX_MAP = {
+    // Middle East
+    'YL': 'lv', 'A4': 'om', 'A6': 'ae', 'A7': 'qa', 'HZ': 'sa', '7Z': 'sa', '9K': 'kw', 'A9': 'bh', 'JY': 'jo', 'OD': 'lb',
+    '4X': 'il', 'SU': 'eg', 'TA': 'tr', 'TC': 'tr', 'YK': 'sy', '5B': 'cy', 'YI': 'iq', 'EP': 'ir', 'EZ': 'tm', '7O': 'ye',
+    // Central Asia
+    'UK': 'uz', 'EY': 'tj', 'EX': 'kg', 'UN': 'kz', '4L': 'ge', 'ER': 'md', 'EK': 'am', '4J': 'az', 'EW': 'by',
+    // Ukraine
+    'UR': 'ua', 'UW': 'ua', 'UX': 'ua', 'UY': 'ua', 'UZ': 'ua', 'EO': 'ua',
+    // Baltics
+    'LY': 'lt', 'ES': 'ee',
+    // Eastern Europe
+    'HA': 'hu', 'HG': 'hu', 'YO': 'ro', 'YP': 'ro', 'YQ': 'ro', 'YR': 'ro', 'LZ': 'bg',
+    '9A': 'hr', 'S5': 'si', 'Z3': 'mk', 'E7': 'ba', 'YT': 'rs', 'YU': 'rs', '4O': 'me', 'Z6': 'xk',
+    'OK': 'cz', 'OL': 'cz', 'OM': 'sk', 'SP': 'pl', 'SN': 'pl', 'SO': 'pl', 'SQ': 'pl', 'SR': 'pl',
+    // Scandinavia
+    'OZ': 'dk', 'OU': 'dk', 'OV': 'dk', 'OW': 'dk', 'OY': 'fo',
+    'LA': 'no', 'LB': 'no', 'LC': 'no', 'LG': 'no', 'LJ': 'no', 'LN': 'no',
+    'SM': 'se', 'SK': 'se', 'SL': 'se', 'SA': 'se', 'SB': 'se', 'SC': 'se', 'SD': 'se', 'SE': 'se', 'SF': 'se', 'SG': 'se', 'SH': 'se', 'SI': 'se', 'SJ': 'se',
+    'OH': 'fi', 'OF': 'fi', 'OG': 'fi', 'OI': 'fi', 'OJ': 'fi',
+    'TF': 'is',
+    // Benelux
+    'PA': 'nl', 'PB': 'nl', 'PC': 'nl', 'PD': 'nl', 'PE': 'nl', 'PF': 'nl', 'PG': 'nl', 'PH': 'nl', 'PI': 'nl',
+    'ON': 'be', 'OO': 'be', 'OP': 'be', 'OQ': 'be', 'OR': 'be', 'OS': 'be', 'OT': 'be',
+    'LX': 'lu',
+    // Russia — all R* prefixes
+    'RA': 'ru', 'RB': 'ru', 'RC': 'ru', 'RD': 'ru', 'RE': 'ru', 'RF': 'ru', 'RG': 'ru', 'RH': 'ru', 'RI': 'ru', 'RJ': 'ru',
+    'RK': 'ru', 'RL': 'ru', 'RM': 'ru', 'RN': 'ru', 'RO': 'ru', 'RP': 'ru', 'RQ': 'ru', 'RS': 'ru', 'RT': 'ru', 'RU': 'ru',
+    'RV': 'ru', 'RW': 'ru', 'RX': 'ru', 'RY': 'ru', 'RZ': 'ru',
+    'UA': 'ru', 'UB': 'ru', 'UC': 'ru', 'UD': 'ru', 'UE': 'ru', 'UF': 'ru', 'UG': 'ru', 'UH': 'ru', 'UI': 'ru',
+    // Germany — all D* amateur prefixes
+    'DA': 'de', 'DB': 'de', 'DC': 'de', 'DD': 'de', 'DE': 'de', 'DF': 'de', 'DG': 'de', 'DH': 'de', 'DI': 'de',
+    'DJ': 'de', 'DK': 'de', 'DL': 'de', 'DM': 'de', 'DN': 'de', 'DO': 'de', 'DP': 'de', 'DQ': 'de', 'DR': 'de',
+    // Switzerland / Austria
+    'HB': 'ch', 'HB3': 'li', 'OE': 'at',
+    // Spain / Portugal
+    'EA': 'es', 'EB': 'es', 'EC': 'es', 'ED': 'es', 'EE': 'es', 'EF': 'es', 'EG': 'es', 'EH': 'es',
+    'CT': 'pt', 'CQ': 'pt', 'CR': 'pt', 'CU': 'pt',
+    // Italy (all I* prefixes)
+    'I': 'it', 'IK': 'it', 'IW': 'it', 'IU': 'it', 'IQ': 'it', 'II': 'it', 'IR': 'it', 'IS': 'it', 'IV': 'it', 'IZ': 'it', 'IN': 'it',
+    // France
+    'F': 'fr', 'TK': 'fr',
+    // UK — national + sub-national
+    'G': 'gb', 'GC': 'gb', 'GM': 'gb-sct', 'GW': 'gb-wls', 'GI': 'gb-nir', 'GD': 'im', 'GJ': 'je', 'GU': 'gg',
+    'M': 'gb', 'MM': 'gb-sct', 'MW': 'gb-wls', 'MI': 'gb-nir',
+    '2': 'gb', '2M': 'gb-sct', '2W': 'gb-wls', '2I': 'gb-nir',
+    // Americas
+    'K': 'us', 'W': 'us', 'N': 'us', 'AA': 'us', 'AB': 'us', 'AC': 'us', 'AD': 'us', 'AE': 'us', 'AF': 'us', 'AG': 'us', 'AH': 'us', 'AI': 'us', 'AJ': 'us', 'AK': 'us',
+    'VE': 'ca', 'VA': 'ca', 'VO': 'ca', 'VY': 'ca', 'CF': 'ca', 'CG': 'ca', 'VG': 'ca',
+    'XE': 'mx', 'XF': 'mx',
+    'TI': 'cr', 'YN': 'ni', 'HQ': 'hn', 'HR': 'hn', 'YS': 'sv', 'HH': 'ht', 'HI': 'do', 'HP': 'pa', 'CO': 'cu',
+    'LU': 'ar', 'LW': 'ar', 'AY': 'ar', 'AZ': 'ar',
+    'PY': 'br', 'PP': 'br', 'PQ': 'br', 'PR': 'br', 'PS': 'br', 'PT': 'br', 'PU': 'br', 'PV': 'br', 'PW': 'br', 'PX': 'br', 'ZV': 'br', 'ZW': 'br', 'ZX': 'br', 'ZY': 'br', 'ZZ': 'br',
+    'CE': 'cl', 'XQ': 'cl', 'CA': 'cl', 'CB': 'cl', 'CC': 'cl', 'CD': 'cl',
+    'CX': 'uy', 'ZP': 'py', 'CP': 'bo', 'OA': 'pe', 'OB': 'pe', 'OC': 'pe',
+    'HC': 'ec', 'HD': 'ec', 'HJ': 'co', 'HK': 'co', 'YV': 've', 'YW': 've', 'YX': 've', 'YY': 've',
+    '4M': 've', '8R': 'gy', 'PZ': 'sr', 'FY': 'gf',
+    // Caribbean / NA islands
+    'KP2': 'vi', 'KP4': 'pr', 'NP4': 'pr', 'WP4': 'pr', 'KH6': 'us', 'KL7': 'us',
+    // Pacific / Oceania
+    'VK': 'au', 'ZL': 'nz', 'ZM': 'nz', 'FK': 'nc', 'FO': 'pf', 'FW': 'wf', 'YJ': 'vu',
+    'T2': 'tv', 'T3': 'ki', 'V7': 'mh', 'KC6': 'fm', 'V6': 'fm', 'C2': 'nr', 'DU': 'ph', 'DV': 'ph', 'DX': 'ph', 'DY': 'ph', 'DZ': 'ph',
+    // East Asia
+    'JA': 'jp', 'JB': 'jp', 'JC': 'jp', 'JD': 'jp', 'JE': 'jp', 'JF': 'jp', 'JG': 'jp', 'JH': 'jp', 'JI': 'jp',
+    'JJ': 'jp', 'JK': 'jp', 'JL': 'jp', 'JM': 'jp', 'JN': 'jp', 'JO': 'jp', 'JP': 'jp', 'JQ': 'jp', 'JR': 'jp', 'JS': 'jp',
+    'HL': 'kr', 'DS': 'kr', 'DT': 'kr', 'KI': 'kr', 'KO': 'kr',
+    'P5': 'kp', 'HM': 'kp',
+    'BY': 'cn', 'BA': 'cn', 'BD': 'cn', 'BG': 'cn', 'BH': 'cn', 'BI': 'cn', 'BJ': 'cn', 'BK': 'cn', 'BL': 'cn', 'BM': 'cn', 'BN': 'cn', 'BO': 'cn', 'BP': 'cn', 'BQ': 'cn', 'BR': 'cn', 'BS': 'cn', 'BT': 'cn', 'BU': 'cn', 'BV': 'tw',
+    'JT': 'mn', 'JU': 'mn', 'JV': 'mn',
+    'VR2': 'hk',
+    // Southeast / South Asia
+    'VU': 'in', 'AT': 'in', 'AU': 'in', 'AV': 'in', 'AW': 'in',
+    'AP': 'pk', 'AS': 'pk',
+    '4S': 'lk', 'S2': 'bd', 'S3': 'bd', 'A5': 'bt', '9N': 'np', '8Q': 'mv',
+    'XY': 'mm', 'XZ': 'mm', 'HS': 'th', 'E2': 'th', '3W': 'vn', 'XV': 'vn', 'XU': 'kh',
+    'XW': 'la', 'RDXC': 'la', 'VL': 'au', '9M': 'my', '9V': 'sg', 'YB': 'id', 'YC': 'id', 'YD': 'id', 'YE': 'id', 'YF': 'id', 'YG': 'id',
+    // Africa
+    'ZS': 'za', 'ZR': 'za', 'ZU': 'za', 'V5': 'na', 'A2': 'bw', 'Z2': 'zw', '9J': 'zm', 'C9': 'mz', '7P': 'ls', '3DA': 'sz',
+    '5R': 'mg', '3B': 'mu', 'S7': 'sc', 'S9': 'st', 'D6': 'km', 'FR': 're',
+    '5Z': 'ke', 'EZ': 'tz', '5X': 'ug', '9X': 'rw', '9U': 'bi', '5H': 'tz',
+    'ET': 'et', '7O': 'ye', 'E3': 'er', 'ST': 'sd', 'SS': 'sd',
+    '5N': 'ng', '5O': 'ml', '6W': 'sn', '9L': 'sl', 'EL': 'lr', 'TU': 'ci', '5V': 'tg', 'TY': 'bj', 'TZ': 'ml',
+    'TR': 'ga', 'TT': 'td', 'TL': 'cf', '9G': 'gh', 'OX': 'gl',
+    'CN': 'ma', '7X': 'dz', 'ZA': 'al', '5A': 'ly', '3V': 'tn', 'TS': 'tn',
+    'S0': 'eh', 'T5': 'so', '6O': 'so',
+    'OX': 'gl', 'XP': 'gl',
+};
+
+function getISOFromCallsign(call) {
+    if (!call) return null;
+    const c = call.toUpperCase();
+    // Try longer prefixes first (3 chars), then 2, then 1
+    for (let len = 3; len >= 1; len--) {
+        const pref = c.substring(0, len);
+        if (PREFIX_MAP[pref]) return PREFIX_MAP[pref];
+    }
+    return null;
+}
+
+// Compact country bounding boxes for coordinate-based fallback
+// [iso, minLat, maxLat, minLon, maxLon]
+const COUNTRY_BBOX = [
+    ['de', 47.3, 55.1, 5.9, 15.0], ['fr', 41.3, 51.1, -5.2, 9.6],
+    ['gb', 49.9, 60.9, -8.2, 1.8], ['it', 35.5, 47.1, 6.6, 18.5],
+    ['es', 36.0, 43.8, -9.4, 4.4], ['pt', 36.8, 42.2, -9.5, -6.2],
+    ['nl', 50.7, 53.6, 3.3, 7.2],  ['be', 49.5, 51.5, 2.5, 6.4],
+    ['ch', 45.8, 47.8, 5.9, 10.5], ['at', 46.4, 49.0, 9.5, 17.2],
+    ['pl', 49.0, 54.9, 14.1, 24.2],['cz', 48.5, 51.1, 12.1, 18.9],
+    ['sk', 47.7, 49.6, 16.8, 22.6],['hu', 45.7, 48.6, 16.1, 22.9],
+    ['ro', 43.6, 48.3, 20.2, 30.0],['bg', 41.2, 44.2, 22.3, 28.6],
+    ['hr', 42.4, 46.6, 13.5, 19.5],['si', 45.4, 46.9, 13.4, 16.6],
+    ['rs', 42.2, 46.2, 18.8, 23.0],['ba', 42.5, 45.3, 15.7, 19.7],
+    ['me', 41.9, 43.6, 18.4, 20.4],['al', 39.6, 42.7, 19.3, 21.1],
+    ['mk', 40.8, 42.4, 20.5, 23.0],['gr', 34.8, 41.8, 19.4, 29.7],
+    ['cy', 34.6, 35.7, 32.3, 34.6],['tr', 35.8, 42.1, 25.7, 44.8],
+    ['se', 55.3, 69.1, 10.6, 24.2],['no', 57.9, 71.2, 4.5, 31.1],
+    ['fi', 59.8, 70.1, 20.0, 31.6],['dk', 54.6, 57.8, 8.1, 15.2],
+    ['is', 63.3, 66.6, -24.5, -13.5],
+    ['ua', 44.4, 52.4, 22.1, 40.2],['by', 51.3, 56.2, 23.2, 32.8],
+    ['md', 45.5, 48.5, 26.6, 30.1],['lt', 53.9, 56.4, 20.9, 26.8],
+    ['lv', 55.7, 57.8, 20.9, 28.2],['ee', 57.5, 59.7, 21.8, 28.2],
+    ['ru', 41.2, 82.0, 19.6, 60.0],// western Russia bbox
+    ['us', 24.5, 49.4, -125.0, -66.9],['ca', 41.7, 83.1, -141.0, -52.6],
+    ['mx', 14.5, 32.7, -117.1, -86.7],
+    ['jp', 24.4, 45.5, 122.9, 153.9],['cn', 18.2, 53.6, 73.6, 134.8],
+    ['kr', 33.1, 38.6, 124.6, 129.6],['kp', 37.7, 42.5, 124.2, 130.7],
+    ['tw', 21.9, 25.3, 120.0, 122.1],
+    ['au', -43.7, -10.7, 113.3, 153.6],['nz', -47.3, -34.4, 166.4, 178.6],
+    ['in', 8.1, 35.5, 68.1, 97.4],  ['pk', 24.0, 37.1, 60.9, 75.2],
+    ['id', -10.9, 5.9, 95.0, 141.0],['my', 1.0, 7.4, 99.6, 119.3],
+    ['ph', 4.6, 21.1, 116.7, 127.0],['th', 5.6, 20.5, 97.3, 105.6],
+    ['vn', 8.6, 23.4, 102.2, 109.5],['il', 29.5, 33.3, 34.3, 35.9],
+    ['sa', 15.1, 32.2, 36.5, 55.7], ['ir', 25.1, 39.8, 44.0, 63.3],
+    ['iq', 29.1, 37.4, 38.8, 48.8], ['sy', 32.3, 37.4, 35.7, 42.4],
+    ['jo', 29.2, 33.4, 34.9, 39.3], ['ae', 22.6, 26.1, 51.6, 56.4],
+    ['eg', 22.0, 31.7, 24.7, 37.1], ['za', -34.8, -22.1, 16.5, 32.9],
+    ['ng', 4.3, 13.9, 2.7, 14.7],   ['ke', -4.7, 4.6, 34.0, 41.9],
+    ['et', 3.4, 14.9, 32.9, 48.0],  ['tz', -11.7, -1.0, 29.3, 40.4],
+    ['br', -33.7, 5.3, -73.9, -34.8],['ar', -55.1, -21.8, -73.6, -53.6],
+    ['cl', -55.9, -17.5, -75.7, -66.4],['ve', 0.7, 12.2, -73.3, -59.8],
+    ['co', -4.2, 12.5, -79.0, -66.9],['pe', -18.4, 0.0, -81.3, -68.7],
+    ['ma', 27.7, 35.9, -13.2, -1.0],['dz', 19.0, 37.1, -8.7, 11.9],
+    ['tn', 30.2, 37.5, 7.5, 11.6],  ['ly', 19.5, 33.2, 9.3, 25.2],
+];
+
+function getISOFromCoords(lat, lon) {
+    if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return null;
+    for (const [iso, minLat, maxLat, minLon, maxLon] of COUNTRY_BBOX) {
+        if (lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon) return iso;
+    }
+    return null;
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2, unit = 'km') {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+    return unit === 'mi' ? d * 0.621371 : d;
+}
+
+const BAND_COLORS = {
+    '2200M': '#4B0082', '630M': '#483D8B', 
+    '160M': '#A020F0', '80M': '#0000FF', '60M': '#00FFFF', 
+    '40M': '#008000', '30M': '#008080', '20M': '#FFFF00', 
+    '17M': '#FFA500', '15M': '#FF0000', '12M': '#FF1493', 
+    '10M': '#8B5CF6', '6M': '#B500D0', '4M': '#8B008B', 
+    '2M': '#E20084', '1.25M': '#FF1493', '70CM': '#E2001E', 
+    '33CM': '#FF4500', '23CM': '#FF6347', '13CM': '#FF7F50',
+    '9CM': '#FFA07A', '6CM': '#F08080', '3CM': '#CD5C5C', 
+    '1.25CM': '#A52A2A', '6MM': '#800000', '4MM': '#556B2F'
+};
+
+const savedBands = localStorage.getItem('polarlog_active_bands');
+const activeBands = savedBands ? new Set(JSON.parse(savedBands)) : new Set(Object.keys(BAND_COLORS));
+
+const OVERLAY_PRESETS = [
+    { id: 'dark',      name: 'Dark Matter',  view: '2d', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',            preview: 'https://a.basemaps.cartocdn.com/dark_all/3/4/3.png' },
+    { id: 'light',     name: 'Arctic White', view: '2d', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',           preview: 'https://a.basemaps.cartocdn.com/light_all/3/4/3.png' },
+    { id: 'voyager',   name: 'Voyager',      view: '2d', url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', preview: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/3/4/3.png' },
+    { id: 'osm',       name: 'Open Streets', view: '2d', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',                      preview: 'https://a.tile.openstreetmap.org/3/4/3.png' },
+    { id: 'satellite', name: 'Satellite',    view: '2d', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',   preview: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/3/3/4' },
+    { id: 'topo',      name: 'Topographic',  view: '2d', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', preview: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/3/3/4' },
+    
+    // 3D Orbit Presets
+    { id: 'globe-day',   name: 'Globe Day',    view: '3d', preview: 'https://unpkg.com/three-globe@2/example/img/earth-blue-marble.jpg', texture: 'https://unpkg.com/three-globe@2/example/img/earth-blue-marble.jpg' },
+    { id: 'globe-night', name: 'Globe Night',  view: '3d', preview: 'https://unpkg.com/three-globe@2/example/img/earth-night.jpg',       texture: 'https://unpkg.com/three-globe@2/example/img/earth-night.jpg' }
+];
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('Polarplot Pro: Initializing System...');
+
+    // DYNAMIC INJECTION - RE-CALIBRATION
+    if (!document.getElementById('globe-ctrl-bar')) {
+        const globeContainer = document.getElementById('globe-container');
+        if (globeContainer) {
+            const bar = document.createElement('div');
+            bar.id = 'globe-ctrl-bar';
+            bar.className = 'globe-ctrl-bar';
+            bar.innerHTML = `
+              <button id="globe-btn-overlay" class="globe-ctrl-btn" title="Map Overlays">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+              </button>
+              <button id="globe-btn-daynight" class="globe-ctrl-btn" title="Toggle Day / Night">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              </button>
+              <button id="globe-btn-toggle" class="globe-ctrl-btn active" title="Return to 2D Map">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              </button>
+              <button id="globe-btn-arcs" class="globe-ctrl-btn" title="Toggle Contact Arcs">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 17 Q8 4 12 12 Q16 20 21 7"/></svg>
+              </button>
+              <button id="globe-btn-fpv" class="globe-ctrl-btn" title="First-Person Perspective View">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            `;
+            globeContainer.appendChild(bar);
+        }
+    }
+    
+    try {
+        mapEngine = new MapEngine('map');
+        worker = new Worker(new URL('./src/adif-worker.js', import.meta.url), { type: 'module' });
+        
+        const loadingStages = [
+            'analyzing spectrum...', 'plotting tactical paths...', 'resolving dxcc layers...',
+            'calculating signal distances...', 'optimizing pulse frequency...', 'mapping global qsos...'
+        ];
+        let stageIdx = 0;
+        let textRotation;
+
+        // Universal UI Controls Binding
+        document.getElementById('ui-btn-layer')?.addEventListener('click', () => {
+            const picker = document.getElementById('overlay-picker');
+            if (picker && !picker.classList.contains('visible')) {
+                renderOverlayGrid();
+            }
+            picker?.classList.toggle('visible');
+        });
+
+        document.getElementById('ui-btn-globe')?.addEventListener('click', () => {
+            toggleGlobe();
+        });
+
+        document.getElementById('ui-btn-zoomin')?.addEventListener('click', () => {
+            if (globeVisible && globeInstance) {
+                const pov = globeInstance.pointOfView();
+                globeInstance.pointOfView({ altitude: Math.max(0.1, pov.altitude - 0.5) }, 400);
+            } else {
+                mapEngine.map.zoomIn();
+            }
+        });
+
+        document.getElementById('ui-btn-zoomout')?.addEventListener('click', () => {
+            if (globeVisible && globeInstance) {
+                const pov = globeInstance.pointOfView();
+                globeInstance.pointOfView({ altitude: Math.min(5, pov.altitude + 0.5) }, 400);
+            } else {
+                mapEngine.map.zoomOut();
+            }
+        });
+
+        // Remove old internal map listeners
+        // mapEngine.map.on('globebtnclick', toggleGlobe);
+        // mapEngine.map.on('overlaybtnclick', () => { ... });
+
+        worker.onmessage = (e) => {
+            const { action, data, percent } = e.data;
+            if (action === 'progress') {
+                updateLoadingStatus(true, loadingStages[stageIdx % loadingStages.length], percent);
+            } else if (action === 'chunkResult') {
+                requestAnimationFrame(() => {
+                    data.forEach(q => {
+                        if (q.LAT && q.LON) {
+                            mapEngine.plotQSO([q], BAND_COLORS[q.BAND?.toUpperCase()] || '#38bdf8');
+                        }
+                    });
+                    stageIdx++;
+                });
+            } else if (action === 'parseResult') {
+                currentQSOs = data;
+                clearInterval(textRotation);
+                finalizeParsedData(data);
+            }
+        };
+
+        const homeGridInput = document.getElementById('my-grid');
+        const homeLatInput = document.getElementById('my-lat');
+        const homeLonInput = document.getElementById('my-lon');
+        const myCallInput = document.getElementById('my-call');
+        const modeGridBtn = document.getElementById('mode-grid');
+        const modeCoordsBtn = document.getElementById('mode-coords');
+        const gridContainer = document.getElementById('grid-container');
+        const coordsContainer = document.getElementById('coords-container');
+
+        if (modeGridBtn && modeCoordsBtn) {
+            modeGridBtn.addEventListener('click', () => {
+                modeGridBtn.classList.add('active');
+                modeCoordsBtn.classList.remove('active');
+                gridContainer.classList.add('active');
+                coordsContainer.classList.remove('active');
+                updateHome();
+            });
+            modeCoordsBtn.addEventListener('click', () => {
+                modeCoordsBtn.classList.add('active');
+                modeGridBtn.classList.remove('active');
+                coordsContainer.classList.add('active');
+                gridContainer.classList.remove('active');
+                updateHome();
+            });
+        }
+
+        const updateHome = () => {
+            const isGridMode = modeGridBtn.classList.contains('active');
+            if (isGridMode) {
+                const grid = homeGridInput.value.trim();
+                const coords = maidenheadToCoords(grid);
+                if (coords) {
+                    mapEngine.setHomeLocation(coords.lat, coords.lon);
+                    localStorage.setItem('polarlog_my_grid', grid);
+                    processQSOs(currentQSOs, false);
+                }
+            } else {
+                const lat = parseFloat(homeLatInput.value);
+                const lon = parseFloat(homeLonInput.value);
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    mapEngine.setHomeLocation(lat, lon);
+                    localStorage.setItem('polarlog_my_lat', lat);
+                    localStorage.setItem('polarlog_my_lon', lon);
+                    processQSOs(currentQSOs, false);
+                }
+            }
+        };
+
+        if (homeLatInput && homeLonInput) {
+            const savedLat = localStorage.getItem('polarlog_my_lat');
+            const savedLon = localStorage.getItem('polarlog_my_lon');
+            if (savedLat) homeLatInput.value = savedLat;
+            if (savedLon) homeLonInput.value = savedLon;
+            if (savedLat && savedLon) mapEngine.setHomeLocation(savedLat, savedLon);
+            homeLatInput.addEventListener('input', updateHome);
+            homeLonInput.addEventListener('input', updateHome);
+        }
+
+        if (myCallInput) {
+            myCallInput.value = localStorage.getItem('polarlog_my_call') || '';
+            myCallInput.addEventListener('input', (e) => localStorage.setItem('polarlog_my_call', e.target.value));
+        }
+
+        if (homeGridInput) {
+            homeGridInput.value = localStorage.getItem('polarlog_my_grid') || '';
+            homeGridInput.addEventListener('input', updateHome);
+        }
+
+        const chkPaths = document.getElementById('chk-paths');
+        const chkClusters = document.getElementById('chk-clusters');
+
+        if (chkPaths) {
+            const savedPaths = localStorage.getItem('polarlog_show_paths') === 'true';
+            chkPaths.checked = savedPaths;
+            mapEngine.setPathsVisible(savedPaths);
+            chkPaths.addEventListener('change', (e) => {
+                const val = e.target.checked;
+                localStorage.setItem('polarlog_show_paths', val);
+                mapEngine.setPathsVisible(val);
+                if (val) processQSOs(currentQSOs, false); // build paths lazily on first enable
+                if (globeVisible && globeInstance) updateGlobeData();
+            });
+        }
+
+        if (chkClusters) {
+            const savedClusters = localStorage.getItem('polarlog_show_clusters') !== 'false';
+            chkClusters.checked = savedClusters;
+            mapEngine.setClustersEnabled(savedClusters);
+            chkClusters.addEventListener('change', (e) => {
+                localStorage.setItem('polarlog_show_clusters', e.target.checked);
+                mapEngine.setClustersEnabled(e.target.checked);
+                if (globeVisible && globeInstance) updateGlobeData();
+            });
+        }
+
+        document.querySelectorAll('.band-chip').forEach(chip => {
+            const band = chip.dataset.band;
+            if (activeBands.has(band)) chip.classList.add('active');
+            else chip.classList.remove('active');
+            chip.addEventListener('click', () => {
+                if (activeBands.has(band)) {
+                    activeBands.delete(band);
+                    chip.classList.remove('active');
+                } else {
+                    activeBands.add(band);
+                    chip.classList.add('active');
+                }
+                localStorage.setItem('polarlog_active_bands', JSON.stringify([...activeBands]));
+                processQSOs(currentQSOs, false);
+            });
+        });
+
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('adif-input');
+        if (dropzone && fileInput) {
+            dropzone.onclick = () => fileInput.click();
+            dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('active'); };
+            dropzone.ondragleave = () => dropzone.classList.remove('active');
+            dropzone.ondrop = (e) => {
+                e.preventDefault(); dropzone.classList.remove('active');
+                if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+            };
+            fileInput.onchange = (e) => {
+                if (e.target.files.length) handleFiles(e.target.files);
+            };
+        }
+
+        const qrzKeyInput = document.getElementById('qrz-key');
+        const qrzUserInput = document.getElementById('qrz-user');
+        const qrzPassInput = document.getElementById('qrz-pass');
+        const corsProxyInput = document.getElementById('cors-proxy');
+        const lookupBtn = document.getElementById('lookup-btn');
+        const bulkBtn = document.getElementById('bulk-resolve-btn');
+
+        if (qrzKeyInput) {
+            qrzKeyInput.value = localStorage.getItem('polarlog_qrz_key') || '';
+            qrzKeyInput.addEventListener('input', (e) => localStorage.setItem('polarlog_qrz_key', e.target.value));
+        }
+        if (qrzUserInput) {
+            qrzUserInput.value = localStorage.getItem('polarlog_qrz_user') || '';
+            qrzUserInput.addEventListener('input', (e) => localStorage.setItem('polarlog_qrz_user', e.target.value));
+        }
+        if (corsProxyInput) {
+            corsProxyInput.value = localStorage.getItem('polarlog_cors_proxy') || 'https://cors-anywhere.herokuapp.com/';
+            corsProxyInput.addEventListener('input', (e) => localStorage.setItem('polarlog_cors_proxy', e.target.value));
+        }
+        
+        if (bulkBtn) bulkBtn.onclick = (e) => { e.preventDefault(); bulkResolveQSOs(); };
+
+        if (lookupBtn) {
+            lookupBtn.onclick = async () => {
+                const searchField = document.getElementById('search-call');
+                const homeField = document.getElementById('my-call');
+                let call = searchField?.value.trim().toUpperCase() || homeField?.value.trim().toUpperCase();
+                const key = document.getElementById('qrz-key').value;
+                const user = document.getElementById('qrz-user').value;
+                const pass = document.getElementById('qrz-pass').value;
+                const proxy = document.getElementById('cors-proxy').value;
+                
+                if (!call || (!key && !user)) return alert('Enter a Callsign and either a Direct Key OR QRZ Username.');
+                
+                try {
+                    isResolving = true;
+                    updateLoadingStatus(true, `Resolving ${call}...`, 45);
+                    lookupBtn.textContent = 'PENDING...';
+                    lookupBtn.disabled = true;
+                    const qrz = new QRZService(user, pass, key, proxy);
+                    const data = await qrz.lookup(call);
+                    isResolving = false;
+                    lookupBtn.textContent = 'RESOLVE HOME';
+                    lookupBtn.disabled = false;
+                    updateLoadingStatus(false);
+                    
+                    if (data) {
+                        if (searchField && !searchField.value) searchField.value = call;
+                        if (call === homeField?.value.trim().toUpperCase()) {
+                            if (data.grid) {
+                                document.getElementById('my-grid').value = data.grid;
+                                localStorage.setItem('polarlog_my_grid', data.grid);
+                            }
+                            if (data.lat && data.lon) {
+                                document.getElementById('my-lat').value = data.lat;
+                                document.getElementById('my-lon').value = data.lon;
+                                localStorage.setItem('polarlog_my_lat', data.lat);
+                                localStorage.setItem('polarlog_my_lon', data.lon);
+                            }
+                        }
+                    } else alert('Station not found or QRZ Session Error.');
+                } catch (err) {
+                    isResolving = false;
+                    updateLoadingStatus(false);
+                    lookupBtn.textContent = 'RESOLVE HOME';
+                    lookupBtn.disabled = false;
+                    if (err.message === 'PROXY_BLOCK') {
+                        if (window.confirm('PROXY BLOCKED: Activate CORS session?')) window.open(proxy, '_blank');
+                    } else alert('Connection Failed: ' + err.message);
+                }
+            };
+        }
+
+        async function bulkResolveQSOs(forceAll = false) {
+            const btn = document.getElementById('bulk-resolve-btn');
+            const stats = document.getElementById('resolve-stats');
+            if (currentQSOs.length === 0) return alert('Import a log first.');
+            btn.disabled = true;
+            btn.textContent = 'INITIALIZING...';
+            const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.GRIDSQUARE);
+            const user = document.getElementById('qrz-user').value, pass = document.getElementById('qrz-pass').value, key = document.getElementById('qrz-key').value, proxy = document.getElementById('cors-proxy').value;
+            if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING'; return alert('Credentials Required.'); }
+            if (!forceAll && missing.length === 0) {
+                if (window.confirm('All contacts resolved. Force refresh?')) return bulkResolveQSOs(true);
+                btn.disabled = false; btn.textContent = 'RESOLVE MISSING'; return;
+            }
+            isResolving = true;
+            btn.textContent = 'RESOLVING...';
+            stats.style.display = 'block';
+            let resolvedCount = 0, totalToResolve = missing.length, processedCount = 0;
+            updateLoadingStatus(true, `Pulse Engine Initiated...`, 5);
+            const qrz = new QRZService(user, pass, key, proxy);
+            let idx = 0, batchSize = 5, lastRedraw = Date.now();
+            const processPulse = async () => {
+                while (idx < totalToResolve) {
+                    const qso = missing[idx++];
+                    try {
+                        const data = await qrz.lookup(qso.CALL);
+                        processedCount++;
+                        if (data) { 
+                            qso.LAT = data.lat; 
+                            qso.LON = data.lon; 
+                            qso.GRIDSQUARE = data.grid; 
+                            if (data.dxcc) qso.DXCC = data.dxcc;
+                            if (data.country) qso.COUNTRY = data.country;
+                            resolvedCount++; 
+                        }
+                        const percent = Math.floor((processedCount / totalToResolve) * 100);
+                        stats.textContent = `STATIONS PROCESSED: ${processedCount} / ${totalToResolve} (${resolvedCount} FOUND)`;
+                        updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${totalToResolve}`, percent);
+                        if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
+                    } catch (e) { processedCount++; updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${totalToResolve}`, Math.floor((processedCount / totalToResolve) * 100)); }
+                }
+            };
+            await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
+            isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false); btn.disabled = false; btn.textContent = 'RESOLVE MISSING';
+        }
+
+        mapEngine.map.on('popupopen', (e) => {
+            const btn = e.popup._container.querySelector('.btn-show-history');
+            if (btn) btn.onclick = () => { const data = e.popup._source.options?.stationData; if (data) showHistoryPanel(data); };
+        });
+
+        document.getElementById('search-call')?.addEventListener('input', (e) => { searchQuery = e.target.value.toUpperCase(); processQSOs(currentQSOs, false); });
+        document.getElementById('filter-dxcc')?.addEventListener('change', (e) => { selectedDXCC = e.target.value; processQSOs(currentQSOs, false); });
+        document.getElementById('close-history')?.addEventListener('click', () => document.getElementById('history-panel').classList.remove('visible'));
+        document.getElementById('close-station')?.addEventListener('click', () => document.getElementById('station-panel').classList.remove('visible'));
+
+        // Stat card buttons
+        ['total', 'dxcc', 'bands', 'modes'].forEach(type => {
+            document.getElementById(`card-${type}`)?.addEventListener('click', () => openStatsPanel(type));
+        });
+        document.getElementById('stats-backdrop')?.addEventListener('click', closeStatsPanels);
+        document.querySelectorAll('.close-stats-btn').forEach(btn => btn.addEventListener('click', closeStatsPanels));
+
+        // 3D Globe toggle
+        mapEngine.map.on('globebtnclick', toggleGlobe);
+
+        const themeChips = document.querySelectorAll('.tchip');
+        const currentTheme = localStorage.getItem('polarlog_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', currentTheme);
+        themeChips.forEach(chip => {
+            if (chip.dataset.t === currentTheme) chip.classList.add('active');
+            chip.onclick = () => {
+                const theme = chip.dataset.t;
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('polarlog_theme', theme);
+                themeChips.forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+            };
+        });
+
+        // Overlay Picker Logic - Context Aware
+        const overlayPanel = document.getElementById('overlay-picker');
+        const overlayGrid  = document.getElementById('overlay-grid');
+        
+        let activeOverlayId = localStorage.getItem('polarlog_overlay') || 'dark';
+        let active3DOverlayId = localStorage.getItem('polarlog_3d_overlay') || 'globe-day';
+
+        // RE-CALIBRATION PULSE: Force to 'dark' if we were mis-aligned by previous turns
+        if (localStorage.getItem('polarlog_recalibrated_v2') !== 'true') {
+            localStorage.setItem('polarlog_overlay', 'dark');
+            localStorage.setItem('polarlog_recalibrated_v2', 'true');
+            activeOverlayId = 'dark';
+        }
+
+        function renderOverlayGrid() {
+            if (!overlayGrid) return;
+            overlayGrid.innerHTML = '';
+            
+            const currentMode = globeVisible ? '3d' : '2d';
+            const currentActive = globeVisible ? active3DOverlayId : activeOverlayId;
+            
+            const filtered = OVERLAY_PRESETS.filter(p => p.view === currentMode || p.view === 'both');
+            
+            filtered.forEach(preset => {
+                const card = document.createElement('div');
+                card.className = 'overlay-card' + (preset.id === currentActive ? ' active' : '');
+                card.dataset.overlayId = preset.id;
+                card.innerHTML = `
+                    <div class="overlay-preview">
+                        <img src="${preset.preview}" alt="${preset.name}" loading="lazy">
+                    </div>
+                    <span class="overlay-label">${preset.name}</span>`;
+                    
+                card.addEventListener('click', () => {
+                    if (!globeVisible) {
+                        // 2D Mode
+                        mapEngine.setTileLayer(preset.url);
+                        activeOverlayId = preset.id;
+                        localStorage.setItem('polarlog_overlay', preset.id);
+                    } else {
+                        // 3D Mode
+                        if (globeInstance) {
+                            globeInstance.globeImageUrl(preset.texture);
+                            active3DOverlayId = preset.id;
+                            localStorage.setItem('polarlog_3d_overlay', preset.id);
+                        }
+                    }
+                    
+                    overlayGrid.querySelectorAll('.overlay-card').forEach(c => c.classList.remove('active'));
+                    card.classList.add('active');
+                });
+                overlayGrid.appendChild(card);
+            });
+        }
+
+        // Initialize grid on boot
+        renderOverlayGrid();
+
+        mapEngine.map.on('click', () => overlayPanel.classList.remove('visible'));
+        document.getElementById('close-overlay-picker')?.addEventListener('click', () => overlayPanel.classList.remove('visible'));
+
+        // Restore saved overlay
+        // HARD RESET: If current is satellite but was meant to be dark baseline, we stay dark
+        if (!localStorage.getItem('polarlog_overlay')) activeOverlayId = 'dark';
+        
+        if (activeOverlayId !== 'dark') {
+            const saved = OVERLAY_PRESETS.find(p => p.id === activeOverlayId);
+            if (saved) mapEngine.setTileLayer(saved.url);
+        }
+
+        const unitKmBtn = document.getElementById('unit-km'), unitMiBtn = document.getElementById('unit-mi');
+        if (unitKmBtn && unitMiBtn) {
+            const updateUnitUI = (unit) => {
+                currentUnits = unit; localStorage.setItem('polarlog_units', unit);
+                unitKmBtn.classList.toggle('active', unit === 'km'); unitMiBtn.classList.toggle('active', unit === 'mi');
+                processQSOs(currentQSOs, false);
+            };
+            unitKmBtn.onclick = () => updateUnitUI('km');
+            unitMiBtn.onclick = () => updateUnitUI('mi');
+            updateUnitUI(currentUnits);
+        }
+        updateLoadingStatus(false);
+    } catch (e) { console.error('INIT FAILURE:', e); }
+});
+
+function handleFiles(files) {
+    const file = files[0]; if (!file) return;
+    updateLoadingStatus(true, `Spectrum Analysis: ${file.name}...`, 10);
+    const reader = new FileReader(); reader.onload = (e) => worker.postMessage({ action: 'parse', data: e.target.result }); reader.readAsText(file);
+}
+
+function finalizeParsedData(data) {
+    const filter = document.getElementById('filter-dxcc');
+    if (filter) {
+        const dxccs = [...new Set(data.map(q => q.COUNTRY || q.DXCC).filter(Boolean))].sort();
+        filter.innerHTML = '<option value="">All Countries</option>' + dxccs.map(d => `<option value="${d}">${d}</option>`).join('');
+    }
+    const dCount = new Set(data.map(q => q.COUNTRY || q.DXCC).filter(Boolean));
+    const bCount = new Set(data.map(q => q.BAND?.toUpperCase()).filter(Boolean));
+    const mCount = new Set(data.map(q => q.MODE).filter(Boolean));
+    document.getElementById('stat-total').textContent = data.length;
+    document.getElementById('stat-dxcc').textContent = dCount.size;
+    document.getElementById('stat-bands').textContent = bCount.size;
+    document.getElementById('stat-modes').textContent = mCount.size;
+    mapEngine.fitBounds(); processQSOs(data, true); updateLoadingStatus(false);
+}
+
+// ─── 3D Globe ────────────────────────────────────────────────────────────────
+
+function toggleGlobe() {
+    const mapEl    = document.getElementById('map');
+    const globeEl  = document.getElementById('globe-container');
+    globeVisible   = !globeVisible;
+    
+    document.body.classList.toggle('globe-active', globeVisible);
+
+    if (globeVisible) {
+        mapEl.style.display   = 'none';
+        globeEl.classList.add('active');
+        
+        if (!globeInitialized) {
+            initGlobe(globeEl);
+            globeInitialized = true;
+
+            // Wire globe-specific buttons after the bar exists
+            document.getElementById('globe-btn-arcs')?.addEventListener('click', function() {
+                const chk = document.getElementById('chk-paths');
+                if (chk) { chk.checked = !chk.checked; chk.dispatchEvent(new Event('change')); }
+            });
+            document.getElementById('globe-btn-toggle')?.addEventListener('click', toggleGlobe);
+            document.getElementById('globe-btn-daynight')?.addEventListener('click', function() {
+                globeDayMode = !globeDayMode;
+                const url = globeDayMode
+                    ? 'https://unpkg.com/three-globe@2/example/img/earth-blue-marble.jpg'
+                    : 'https://unpkg.com/three-globe@2/example/img/earth-night.jpg';
+                globeInstance?.globeImageUrl(url);
+            });
+            document.getElementById('globe-btn-fpv')?.addEventListener('click', function() {
+                globeFPVMode ? exitGlobeFPV() : enterGlobeFPV();
+            });
+        } else {
+            globeInstance.width(globeEl.offsetWidth).height(globeEl.offsetHeight);
+            updateGlobeData();
+        }
+    } else {
+        globeEl.classList.remove('active');
+        mapEl.style.display = '';
+        mapEngine.map.invalidateSize();
+    }
+}
+
+function initGlobe(el) {
+    if (!window.Globe) { console.warn('Globe.gl not loaded'); return; }
+
+    const cur3DId = localStorage.getItem('polarlog_3d_overlay') || 'globe-day';
+    const activePreset = OVERLAY_PRESETS.find(p => p.id === cur3DId) || OVERLAY_PRESETS.find(p => p.view === '3d');
+    
+    // Default to the texture defined in the context-aware preset
+    const globeImg = activePreset ? activePreset.texture : 'https://unpkg.com/three-globe@2/example/img/earth-blue-marble.jpg';
+
+    const bgImg = 'https://unpkg.com/three-globe@2/example/img/night-sky.png';
+
+    globeInstance = Globe({ rendererConfig: { antialias: false, powerPreference: 'high-performance' } })(el)
+        .width(el.offsetWidth)
+        .height(el.offsetHeight)
+        .globeImageUrl(globeImg)
+        .backgroundImageUrl(bgImg)
+        .showAtmosphere(false)
+        .onPointClick((point, event) => {
+            if (!point.isHome) showGlobePopup(point, event.clientX, event.clientY);
+        })
+        .onGlobeClick(() => hideGlobePopup());
+
+    globeInstance.controls().enableDamping   = true;
+    globeInstance.controls().dampingFactor   = 0.08;
+    globeInstance.controls().rotateSpeed     = 0.6;
+
+    // Fixed pixel ratio — no per-frame resize calls
+    globeInstance.renderer().setPixelRatio(1);
+
+    // Pause Globe.gl render loop when idle — CSS animations keep running on the
+    // compositor so dots still pulse, but Globe.gl stops recalculating HTML element
+    // transforms every frame → near-zero overhead when not dragging
+    let _idleTimer;
+    const _ctrl = globeInstance.controls();
+    _ctrl.addEventListener('start', () => {
+        clearTimeout(_idleTimer);
+        globeInstance.resumeAnimation();
+    });
+    _ctrl.addEventListener('end', () => {
+        clearTimeout(_idleTimer);
+        _idleTimer = setTimeout(() => globeInstance.pauseAnimation(), 600);
+    });
+
+    // Re-cluster when zoom level changes so clusters break up on zoom-in
+    let _lastCellDeg = null;
+    let _zoomDebounce;
+    globeInstance.controls().addEventListener('change', () => {
+        clearTimeout(_zoomDebounce);
+        _zoomDebounce = setTimeout(() => {
+            const alt = globeInstance.pointOfView().altitude;
+            const cell = alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : 0.5;
+            if (cell !== _lastCellDeg) { _lastCellDeg = cell; updateGlobeData(); }
+        }, 200);
+    });
+
+
+    updateGlobeData();
+
+    // Fly to home on first load
+    const hLat = parseFloat(document.getElementById('my-lat')?.value) || 0;
+    const hLon = parseFloat(document.getElementById('my-lon')?.value) || 0;
+    if (hLat || hLon) globeInstance.pointOfView({ lat: hLat, lng: hLon, altitude: 2.2 }, 1200);
+}
+
+function hexAlpha(hex, a) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+// Globe dot clustering — cell size shrinks as user zooms in so clusters break apart
+function buildGlobeDots(contactList, cellDeg = 4) {
+    const CELL = cellDeg;
+    const grid = {};
+    contactList.forEach(c => {
+        const key = `${Math.round(c.lat / CELL) * CELL},${Math.round(c.lng / CELL) * CELL}`;
+        if (!grid[key]) grid[key] = { latSum: 0, lngSum: 0, totalQSOs: 0, stations: 0, bands: {}, items: [] };
+        const g = grid[key];
+        g.latSum += c.lat; g.lngSum += c.lng;
+        g.totalQSOs += c.count; g.stations++;
+        g.bands[c.band] = (g.bands[c.band] || 0) + c.count;
+        g.items.push(c);
+    });
+    const cells = Object.values(grid).map(cell => {
+        const n = cell.stations;
+        const topBand = Object.entries(cell.bands).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+        const single = n === 1 ? cell.items[0] : null;
+        return {
+            lat: cell.latSum / n, lng: cell.lngSum / n,
+            color: BAND_COLORS[topBand] || '#38bdf8',
+            clusterSize: n, count: cell.totalQSOs, band: topBand,
+            qsoData: single?.qsos || null,
+            call: single?.call || null, country: single?.country || null
+        };
+    });
+    return cells.sort((a, b) => b.count - a.count).slice(0, 250);
+}
+
+
+function updateGlobeData() {
+    if (!globeInstance || !currentQSOs.length) return;
+    globeInstance.resumeAnimation();
+
+    const homeLoc = mapEngine?.homeLocation;
+    const hLat = homeLoc?.[0] || 0;
+    const hLon = homeLoc?.[1] || 0;
+    const hasHome = !!(hLat || hLon);
+
+    // Build unique contact index keyed by callsign
+    const contacts = {};
+    currentQSOs.forEach(q => {
+        if (!q.LAT || !q.LON) return;
+        if (!contacts[q.CALL]) contacts[q.CALL] = {
+            lat: parseFloat(q.LAT), lng: parseFloat(q.LON),
+            call: q.CALL, country: q.COUNTRY || q.DXCC || '',
+            band: q.BAND?.toUpperCase() || '', count: 0, qsos: []
+        };
+        contacts[q.CALL].count++;
+        contacts[q.CALL].qsos.push(q);
+    });
+    const contactList = Object.values(contacts);
+
+
+    // Cell size shrinks as user zooms in — clusters break up naturally
+    const alt = globeInstance.pointOfView().altitude;
+    const cellDeg = alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : 0.5;
+
+    // Sync with sidebar clustering toggle — clustered or one dot per callsign
+    const clusteringOn = document.getElementById('chk-clusters')?.checked ?? true;
+    const dotList = clusteringOn
+        ? buildGlobeDots(contactList, cellDeg)
+        : contactList.map(c => ({
+            lat: c.lat, lng: c.lng,
+            color: BAND_COLORS[c.band] || '#38bdf8',
+            clusterSize: 1, count: c.count, band: c.band,
+            qsoData: c.qsos, call: c.call, country: c.country
+        }));
+
+    // All markers as HTML elements — CSS animations run on the compositor so they
+    // keep pulsing even when Globe.gl render loop is paused (idle)
+    globeInstance.pointsData([]);
+    const homeEntry = hasHome ? [{ lat: hLat, lng: hLon, isHome: true }] : [];
+    globeInstance
+        .htmlElementsData([...homeEntry, ...dotList])
+        .htmlElement(d => {
+            const el = document.createElement('div');
+            if (d.isHome) {
+                el.className = 'globe-qth-dot';
+            } else {
+                const color = d.color || '#38bdf8';
+                el.className = 'globe-contact-dot';
+                el.style.background = color;
+                el.style.boxShadow = `0 0 5px ${color}99`;
+                el.addEventListener('click', e => {
+                    e.stopPropagation();
+                    showGlobePopup(d, e.clientX, e.clientY);
+                });
+            }
+            return el;
+        })
+        .htmlLat(d => d.lat)
+        .htmlLng(d => d.lng)
+        .htmlAltitude(0);
+
+    // ── Arcs — synced with sidebar Contact Paths toggle ───────────────────────
+    const arcsOn = document.getElementById('chk-paths')?.checked ?? false;
+    if (hasHome && arcsOn) {
+        // Cap at 800 arcs — sample evenly if over limit to keep GPU happy
+        const MAX_ARCS = 800;
+        const arcSource = contactList.length > MAX_ARCS
+            ? contactList.filter((_, i) => i % Math.ceil(contactList.length / MAX_ARCS) === 0)
+            : contactList;
+
+        const arcs = arcSource.map(c => ({
+            startLat: hLat, startLng: hLon,
+            endLat: c.lat,  endLng: c.lng,
+            color: hexAlpha(BAND_COLORS[c.band] || '#38bdf8', 0.55),
+            label: c.call
+        }));
+        globeInstance
+            .arcsData(arcs)
+            .arcStartLat(d => d.startLat)
+            .arcStartLng(d => d.startLng)
+            .arcEndLat(d => d.endLat)
+            .arcEndLng(d => d.endLng)
+            .arcColor(d => d.color)          // flat color — no gradient = no animation loop
+            .arcAltitudeAutoScale(0.32)
+            .arcStroke(0.35)
+            .arcResolution(16)               // was 64 — 4× fewer tube segments per arc
+            .arcDashLength(1)
+            .arcDashGap(0)
+            .arcDashAnimateTime(0)           // stop continuous re-render loop
+            .arcLabel(d => d.label);
+    } else {
+        globeInstance.arcsData([]);
+    }
+}
+
+// ─── Globe Popup ─────────────────────────────────────────────────────────────
+
+function showGlobePopup(point, clientX, clientY) {
+    const popup   = document.getElementById('globe-popup');
+    const inner   = document.getElementById('globe-popup-inner');
+    if (!popup || !inner) return;
+
+    const homeLoc = mapEngine?.homeLocation;
+    const hLat = homeLoc?.[0] || 0;
+    const hLon = homeLoc?.[1] || 0;
+
+    if (point.clusterSize > 1 && !point.qsoData) {
+        // Cluster card
+        inner.innerHTML = `
+          <div class="globe-popup-cluster">
+            <strong>${point.count}</strong> QSOs across <strong style="color:#f0f4ff;">${point.clusterSize}</strong> stations
+            <div style="margin-top:8px;font-size:0.7rem;color:rgba(255,255,255,0.35);">Zoom in to see individual contacts</div>
+          </div>`;
+    } else {
+        // Single station card
+        const qso = point.qsoData?.[0] || {};
+        const call = point.call || qso.CALL || 'N/A';
+        const country = point.country || qso.COUNTRY || qso.DXCC || 'Unknown';
+        const band = point.band || qso.BAND || 'N/A';
+        const iso = DXCC_MAP[(country).toUpperCase()] || getISOFromCallsign(call);
+        const flagHtml = iso ? buildFlagImg(iso, country, 28, 'width:100%;height:100%;object-fit:cover;border-radius:2px;') : '📡';
+        let distStr = '';
+        if (hLat && hLon && qso.LAT && qso.LON) {
+            distStr = `${calculateDistance(hLat, hLon, parseFloat(qso.LAT), parseFloat(qso.LON), currentUnits).toFixed(0)} ${currentUnits}`;
+        }
+        inner.innerHTML = `
+          <div class="globe-popup-header">
+            <div class="globe-popup-flag">${flagHtml}</div>
+            <div>
+              <div class="globe-popup-call">${call}</div>
+              <div class="globe-popup-country">${country}</div>
+            </div>
+          </div>
+          <div class="globe-popup-body">
+            ${distStr ? `<div class="globe-popup-row"><span>Range</span><span class="globe-popup-val accent">${distStr}</span></div>` : ''}
+            <div class="globe-popup-row"><span>Band</span><span class="globe-popup-val">${band}</span></div>
+            <div class="globe-popup-row"><span>Grid</span><span class="globe-popup-val">${qso.GRIDSQUARE || 'N/A'}</span></div>
+            <div class="globe-popup-row"><span>Contacts</span><span class="globe-popup-val accent">${point.count || point.qsoData?.length || 1}</span></div>
+          </div>
+          <div style="padding:0 14px 12px;">
+            <button class="globe-popup-hist-btn scard-btn" style="width:100%;padding:7px;background:rgba(56,189,248,0.08);border:1px solid var(--acc);color:var(--acc);border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;">📜 Show All QSOs</button>
+          </div>`;
+
+        const histBtn = inner.querySelector('.globe-popup-hist-btn');
+        if (histBtn && point.qsoData) {
+            histBtn.addEventListener('click', () => {
+                hideGlobePopup();
+                showHistoryPanel(point.qsoData);
+            });
+        }
+    }
+
+    // Position near click, keep within viewport
+    const W = 240, pad = 12;
+    let x = clientX + 14;
+    let y = clientY - 20;
+    if (x + W > window.innerWidth - pad) x = clientX - W - 14;
+    if (y + 180 > window.innerHeight - pad) y = window.innerHeight - 180 - pad;
+    if (y < pad) y = pad;
+
+    popup.style.left    = x + 'px';
+    popup.style.top     = y + 'px';
+    popup.style.display = 'block';
+}
+
+function hideGlobePopup() {
+    const popup = document.getElementById('globe-popup');
+    if (popup) popup.style.display = 'none';
+}
+
+// ─── Globe FPV ───────────────────────────────────────────────────────────────
+
+function enterGlobeFPV() {
+    if (!globeInstance) return;
+    const homeLoc = mapEngine?.homeLocation;
+    const hLat = homeLoc?.[0] || 0;
+    const hLon = homeLoc?.[1] || 0;
+
+    globeFPVMode = true;
+    globePreFPVPov = globeInstance.pointOfView();
+    hideGlobePopup();
+
+    // Lock zoom to surface level (globe radius ≈ 100 scene units)
+    const ctrl = globeInstance.controls();
+    ctrl._fpvMinDist = ctrl.minDistance;
+    ctrl._fpvMaxDist = ctrl.maxDistance;
+    ctrl.minDistance = 101.5;
+    ctrl.maxDistance = 101.5;
+
+    // High quality while in FPV
+    globeInstance.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 3));
+
+    globeInstance.pointOfView({ lat: hLat || 0, lng: hLon || 0, altitude: 0.015 }, 1400);
+
+    document.getElementById('globe-btn-fpv')?.classList.add('active');
+    document.getElementById('globe-fpv-hint').style.display = 'block';
+}
+
+function exitGlobeFPV() {
+    if (!globeInstance) return;
+    globeFPVMode = false;
+
+    const ctrl = globeInstance.controls();
+    if (ctrl._fpvMinDist !== undefined) {
+        ctrl.minDistance = ctrl._fpvMinDist;
+        ctrl.maxDistance = ctrl._fpvMaxDist;
+    }
+
+    globeInstance.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    globeInstance.pointOfView(globePreFPVPov || { altitude: 2.2 }, 1200);
+
+    document.getElementById('globe-btn-fpv')?.classList.remove('active');
+    document.getElementById('globe-fpv-hint').style.display = 'none';
+}
+
+// ─── Stats Panels ────────────────────────────────────────────────────────────
+
+function openStatsPanel(type) {
+    if (!currentQSOs.length) return;
+    document.querySelectorAll('.stats-modal.visible').forEach(p => p.classList.remove('visible'));
+    const panel = document.getElementById(`panel-${type}`);
+    const content = document.getElementById(`panel-${type}-content`);
+    if (!panel || !content) return;
+    const renders = { total: renderTotalPanel, dxcc: renderDXCCPanel, bands: renderBandsPanel, modes: renderModesPanel };
+    renders[type]?.(content);
+    panel.classList.add('visible');
+    document.getElementById('stats-backdrop').classList.add('visible');
+}
+
+function closeStatsPanels() {
+    document.querySelectorAll('.stats-modal.visible').forEach(p => p.classList.remove('visible'));
+    document.getElementById('stats-backdrop').classList.remove('visible');
+}
+
+function renderTotalPanel(container) {
+    const groups = {};
+    currentQSOs.forEach(q => {
+        if (!groups[q.CALL]) groups[q.CALL] = {
+            call: q.CALL, country: q.COUNTRY || q.DXCC || '',
+            band: q.BAND || '--', mode: q.MODE || '--',
+            count: 0, lastDate: ''
+        };
+        groups[q.CALL].count++;
+        if ((q.QSO_DATE || '') > groups[q.CALL].lastDate) groups[q.CALL].lastDate = q.QSO_DATE || '';
+    });
+
+    const data = Object.values(groups);
+    data.sort((a, b) => {
+        const av = a[totalSortCol], bv = b[totalSortCol];
+        if (totalSortCol === 'count') return (bv - av) * totalSortDir;
+        if (typeof av === 'string') return av.localeCompare(bv) * totalSortDir;
+        return (av - bv) * totalSortDir;
+    });
+
+    const arrow = col => totalSortCol === col
+        ? `<span class="sort-arrow">${totalSortDir === 1 ? '↑' : '↓'}</span>` : '';
+
+    const formatDate = raw => (!raw || raw.length < 8) ? '--'
+        : `${raw.slice(6,8)}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][+raw.slice(4,6)-1]||'?'}-${raw.slice(0,4)}`;
+
+    const rows = data.map(s => {
+        const iso = (DXCC_MAP[(s.country || '').toUpperCase()] || getISOFromCallsign(s.call) || '').toLowerCase();
+        const flagHtml = buildFlagImg(iso, s.country, 40, 'height:13px;border-radius:2px;vertical-align:middle;margin-right:5px;', "this.onerror=null;this.style.display='none';");
+        const bandColor = BAND_COLORS[s.band?.toUpperCase()] || 'var(--acc)';
+        return `<tr>
+            <td style="color:var(--acc);font-weight:bold;">${s.call}</td>
+            <td>${flagHtml}${s.country}</td>
+            <td style="color:${bandColor};font-weight:bold;">${s.band}</td>
+            <td>${s.mode}</td>
+            <td>${formatDate(s.lastDate)}</td>
+            <td>${s.count > 1 ? `<span style="color:var(--acc);font-weight:bold;">×${s.count}</span>` : '1'}</td>
+        </tr>`;
+    }).join('');
+
+    container.innerHTML = `<div style="overflow-y:auto;max-height:62vh;">
+        <table class="stats-table">
+            <thead><tr>
+                <th data-sort="call">Callsign${arrow('call')}</th>
+                <th data-sort="country">Country${arrow('country')}</th>
+                <th data-sort="band">Band${arrow('band')}</th>
+                <th data-sort="mode">Mode${arrow('mode')}</th>
+                <th data-sort="lastDate">Last QSO${arrow('lastDate')}</th>
+                <th data-sort="count">QSOs${arrow('count')}</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+
+    container.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.sort;
+            if (totalSortCol === col) {
+                const defaultDir = (col === 'count' || col === 'lastDate') ? -1 : 1;
+                if (totalSortDir === -defaultDir) { totalSortCol = 'count'; totalSortDir = -1; }
+                else { totalSortDir *= -1; }
+            } else {
+                totalSortCol = col;
+                totalSortDir = (col === 'count' || col === 'lastDate') ? -1 : 1;
+            }
+            renderTotalPanel(container);
+        });
+    });
+}
+
+function renderDXCCPanel(container) {
+    const counts = {};
+    currentQSOs.forEach(q => {
+        const key = q.COUNTRY || q.DXCC || 'Unknown';
+        counts[key] = (counts[key] || 0) + 1;
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const max = sorted[0]?.[1] || 1;
+    const rows = sorted.map(([country, count]) => {
+        const iso = (DXCC_MAP[country.toUpperCase()] || '').toLowerCase();
+        const pct = (count / max * 100).toFixed(1);
+        const flag = iso
+            ? buildFlagImg(iso, country, 40, 'width:30px;height:21px;object-fit:cover;border-radius:3px;flex-shrink:0;', "this.onerror=null;this.style.display='none';")
+            : `<div style="width:30px;height:21px;background:var(--brd);border-radius:3px;flex-shrink:0;"></div>`;
+        return `<div class="stats-row">
+            ${flag}
+            <span style="flex:1;font-size:0.78rem;font-family:var(--font-mono);">${country}</span>
+            <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${pct}%;background:var(--acc);"></div></div>
+            <span style="color:var(--acc);font-family:var(--font-mono);font-size:0.75rem;min-width:32px;text-align:right;font-weight:bold;">${count}</span>
+        </div>`;
+    }).join('');
+    container.innerHTML = `<div style="overflow-y:auto;max-height:62vh;">${rows}</div>`;
+}
+
+function renderBandsPanel(container) {
+    const counts = {};
+    currentQSOs.forEach(q => {
+        const band = q.BAND?.toUpperCase() || 'UNKNOWN';
+        counts[band] = (counts[band] || 0) + 1;
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const max = sorted[0]?.[1] || 1;
+    const rows = sorted.map(([band, count]) => {
+        const color = BAND_COLORS[band] || 'var(--acc)';
+        const pct = (count / max * 100).toFixed(1);
+        return `<div class="stats-row">
+            <div style="width:12px;height:12px;border-radius:50%;background:${color};box-shadow:0 0 8px ${color};flex-shrink:0;"></div>
+            <span style="font-family:var(--font-mono);font-size:0.82rem;font-weight:bold;color:${color};min-width:68px;">${band}</span>
+            <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+            <span style="color:var(--acc);font-family:var(--font-mono);font-size:0.75rem;min-width:32px;text-align:right;font-weight:bold;">${count}</span>
+        </div>`;
+    }).join('');
+    container.innerHTML = `<div style="overflow-y:auto;max-height:62vh;">${rows}</div>`;
+}
+
+function renderModesPanel(container) {
+    const counts = {};
+    currentQSOs.forEach(q => {
+        const mode = q.MODE || 'UNKNOWN';
+        counts[mode] = (counts[mode] || 0) + 1;
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const max = sorted[0]?.[1] || 1;
+    const rows = sorted.map(([mode, count]) => {
+        const pct = (count / max * 100).toFixed(1);
+        return `<div class="stats-row">
+            <span style="font-family:var(--font-mono);font-size:0.82rem;font-weight:bold;color:var(--text);min-width:80px;">${mode}</span>
+            <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${pct}%;background:var(--acc);"></div></div>
+            <span style="color:var(--acc);font-family:var(--font-mono);font-size:0.75rem;min-width:32px;text-align:right;font-weight:bold;">${count}</span>
+        </div>`;
+    }).join('');
+    container.innerHTML = `<div style="overflow-y:auto;max-height:62vh;">${rows}</div>`;
+}
+
+function processQSOs(qsos, shouldFitBounds = false) {
+    if (!mapEngine) return;
+    mapEngine.clear();
+    const filtered = qsos.filter(q => {
+        const mSearch = !searchQuery || q.CALL.toUpperCase().startsWith(searchQuery);
+        const mDXCC = !selectedDXCC || (q.COUNTRY || q.DXCC) === selectedDXCC;
+        const mBand = activeBands.has(q.BAND?.toUpperCase());
+        return mSearch && mDXCC && mBand;
+    });
+    const groups = {};
+    filtered.forEach(q => {
+        const key = `${q.CALL}-${q.GRIDSQUARE || Number(q.LAT).toFixed(3)}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(q);
+    });
+    Object.values(groups).forEach(history => {
+        const latest = history[0];
+        if (latest.LAT && latest.LON) {
+            let distStr = '';
+            const hLat = parseFloat(document.getElementById('my-lat').value) || 0, hLon = parseFloat(document.getElementById('my-lon').value) || 0;
+            if (hLat && hLon) distStr = `${calculateDistance(hLat, hLon, parseFloat(latest.LAT), parseFloat(latest.LON), currentUnits).toFixed(0)} ${currentUnits}`;
+            const iso = DXCC_MAP[(latest.COUNTRY || '').toUpperCase()]
+                || getISOFromCallsign(latest.CALL)
+                || DXCC_MAP[latest.DXCC]
+                || getISOFromCoords(parseFloat(latest.LAT), parseFloat(latest.LON));
+            const cName = latest.COUNTRY || latest.DXCC || ISO_TO_NAME[iso] || 'Unknown Station';
+            const flagHtml = iso ? buildFlagImg(iso, cName, 160, 'width:100%;height:100%;object-fit:cover;border-radius:2px;', "this.onerror=null;this.src='';this.parentElement.innerHTML='📡';") : '📡';
+            mapEngine.plotQSO(history, BAND_COLORS[latest.BAND?.toUpperCase()] || '#38bdf8', { tactical: { dist: distStr, flagHtml, name: cName } });
+        }
+    });
+    if (shouldFitBounds) mapEngine.fitBounds();
+    if (typeof isResolving !== 'undefined' && isResolving) return;
+    if (globeVisible && globeInstance) updateGlobeData();
+    updateLoadingStatus(false);
+}
+
+function showHistoryPanel(history) {
+    const latest = history[0], hLat = parseFloat(document.getElementById('my-lat').value) || 0, hLon = parseFloat(document.getElementById('my-lon').value) || 0;
+    document.getElementById('hist-call').textContent = latest.CALL;
+    document.getElementById('hist-total').textContent = history.length;
+    const formatDate = (raw) => { if (!raw || raw.length !== 8) return raw; return `${raw.substring(6,8)}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][parseInt(raw.substring(4,6))-1] || '??'}-${raw.substring(0,4)}`; };
+    document.getElementById('qso-history-body').innerHTML = history.slice(0, 100).map(q => {
+        let distStr = '--'; if (q.LAT && q.LON && hLat && hLon) distStr = `${calculateDistance(hLat, hLon, parseFloat(q.LAT), parseFloat(q.LON), currentUnits).toFixed(0)} ${currentUnits}`;
+        return `<tr style="border-bottom: 1px solid var(--brd2);"><td style="padding: 8px; font-size: 0.75rem;">${formatDate(q.QSO_DATE)}</td><td style="padding: 8px; font-weight: bold; color: ${BAND_COLORS[q.BAND?.toUpperCase()] || 'var(--acc)'};">${q.BAND} / ${q.MODE}</td><td style="padding: 8px;">${q.RST_SENT || '--'}</td><td style="padding: 8px; color: var(--acc);">${distStr}</td></tr>`;
+    }).join('');
+    document.getElementById('history-panel').classList.add('visible');
+}
+
+function updateLoadingStatus(act, msg = '', per = 0) {
+    const o = document.getElementById('loading-overlay'); if (!o) return;
+    o.classList.toggle('active', act);
+    if (msg) document.getElementById('loading-status').textContent = msg;
+    if (per) document.getElementById('loading-progress-bar').style.width = per + '%';
+}
+
+function maidenheadToCoords(grid) {
+    if (!grid || grid.length < 4) return null;
+    grid = grid.toUpperCase();
+    const lon = (grid.charCodeAt(0) - 65) * 20 - 180 + (parseInt(grid[2]) * 2) + (grid.length >= 6 ? (grid.charCodeAt(4) - 65) * (2/24) + (1/24) : 1);
+    const lat = (grid.charCodeAt(1) - 65) * 10 - 90 + parseInt(grid[3]) + (grid.length >= 6 ? (grid.charCodeAt(5) - 65) * (1/24) + (0.5/24) : 0.5);
+    return { lat, lon };
+}
