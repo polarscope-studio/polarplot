@@ -40,16 +40,17 @@ body { font-family: var(--font-main); color: var(--text); display: flex; }
 * { scrollbar-width: thin; scrollbar-color: var(--brd) var(--bg); }
 
 #app { display: flex; width: 100%; height: 100vh; }
-.sidebar { width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 1.25rem; z-index: 100; overflow-y: auto; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
-#map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; }
+.sidebar { width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 1.25rem; z-index: 100; overflow-y: auto; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); contain: layout style; }
+#map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; transform: translateZ(0); }
 
 /* Station & History Panels (Centered Glassy Modals) */
 .station-panel {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
   width: 550px; max-width: 95vw; background: rgba(13, 18, 32, 0.85); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
   border: 1px solid var(--brd); border-radius: 20px; z-index: 2500; display: flex; flex-direction: column;
-  opacity: 0; pointer-events: none; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  opacity: 0; pointer-events: none; transition: opacity 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   box-shadow: 0 40px 100px rgba(0,0,0,0.8);
+  will-change: transform, opacity;
 }
 .station-panel.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
 
@@ -182,13 +183,14 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 .beacon-pulse { display: flex; align-items: center; justify-content: center; }
 .home-beacon {
   width: 12px; height: 12px; background: var(--acc); border-radius: 50%;
-  box-shadow: 0 0 0 var(--acc); animation: beacon-pulse 2s infinite;
   border: 2px solid #fff;
+  will-change: transform, opacity;
+  animation: beacon-pulse 2s infinite;
 }
 @keyframes beacon-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
-  70% { box-shadow: 0 0 0 15px rgba(56, 189, 248, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+  0%   { transform: scale(1);    opacity: 1; }
+  50%  { transform: scale(1.8);  opacity: 0.3; }
+  100% { transform: scale(1);    opacity: 1; }
 }
 
 /* Leaflet UI Overrides (Total Eclipse) */
@@ -207,22 +209,21 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 .leaflet-bar a.leaflet-disabled { background-color: var(--bg) !important; color: var(--muted) !important; }
 
 .leaflet-popup-content-wrapper {
-  background: rgba(8, 11, 18, 0.85) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--brd);
+  background: color-mix(in srgb, var(--surf), transparent 5%) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid color-mix(in srgb, var(--acc), transparent 70%) !important;
   color: var(--text) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  border-radius: 10px !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.7) !important;
   padding: 0 !important;
-  font-family: var(--font-mono) !important;
+  font-family: var(--font-main) !important;
+  min-width: 240px;
 }
-.leaflet-popup-content { margin: 0 !important; width: auto !important; font-family: var(--font-mono) !important; }
-.leaflet-popup-tip { background: rgba(8, 11, 18, 0.85) !important; border: 1px solid var(--brd); font-family: var(--font-mono) !important; }
-.leaflet-container a.leaflet-popup-close-button { color: var(--muted) !important; padding: 8px 8px 0 0 !important; }
-.leaflet-container a.leaflet-popup-close-button:hover { color: var(--acc) !important; }
-
-.station-card { padding: 15px; min-width: 200px; }
+.leaflet-popup-content { margin: 0 !important; width: auto !important; }
+.leaflet-popup-tip { background: color-mix(in srgb, var(--surf), transparent 5%) !important; }
+.leaflet-container a.leaflet-popup-close-button { display: none !important; }
+.leaflet-popup-close-button { display: none !important; }
 
 /* Transitions for dynamic elements */
 #grid-container, #coords-container { transition: opacity 0.3s ease, transform 0.3s ease; }
@@ -238,6 +239,20 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   overflow: hidden;
 }
 .globe-container.active { display: block; }
+
+#globe-arc-overlay {
+  position: absolute; inset: 0; z-index: 500;
+  background: color-mix(in srgb, var(--bg), transparent 25%);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+  pointer-events: none;
+}
+#globe-arc-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; }
+.globe-arc-overlay-inner { text-align: center; width: 280px; }
+#globe-arc-progress-bar { height: 100%; background: linear-gradient(90deg, var(--acc), #fff); width: 0; transition: width 0.5s ease; box-shadow: 0 0 15px var(--acc-glow); }
+#globe-arc-status { font-family: var(--font-mono); font-size: 0.62rem; color: var(--acc); text-transform: uppercase; letter-spacing: 2px; font-weight: bold; margin: 0; }
 
 /* Universal Map UI Overlay (Persistent 2D/3D Controls) */
 .map-ui-overlay {
@@ -379,8 +394,8 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 /* Map Overlay Picker */
 .overlay-picker {
   position: fixed;
-  top: 52px;
-  right: 10px;
+  top: 10px;
+  right: 52px;
   width: 290px;
   background: rgba(8, 11, 18, 0.88);
   backdrop-filter: blur(22px);
@@ -394,6 +409,7 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04) inset;
   overflow: hidden;
+  will-change: transform, opacity;
 }
 .overlay-picker.visible {
   opacity: 1;

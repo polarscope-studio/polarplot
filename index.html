@@ -16,17 +16,17 @@
     <style>
       .splash {
         position: fixed; inset: 0; z-index: 9999;
-        background: rgba(0,0,0,0.85);
+        background: color-mix(in srgb, var(--bg), transparent 20%);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         display: flex; align-items: center; justify-content: center;
         font-family: 'DM Sans', sans-serif;
       }
       .splash-card {
-        background: rgba(15,15,25,0.92);
-        border: 1px solid rgba(56,189,248,0.25);
+        background: color-mix(in srgb, var(--surf), transparent 8%);
+        border: 1px solid color-mix(in srgb, var(--acc), transparent 75%);
         border-radius: 16px;
-        box-shadow: 0 0 60px rgba(56,189,248,0.08), 0 0 0 1px rgba(56,189,248,0.06);
+        box-shadow: 0 0 60px var(--acc-glow), 0 0 0 1px color-mix(in srgb, var(--acc), transparent 94%);
         width: min(680px, 96vw);
         max-height: 90vh;
         display: flex; flex-direction: column;
@@ -38,7 +38,7 @@
       }
       .splash-logo {
         width: 52px; height: 52px; object-fit: contain;
-        filter: drop-shadow(0 0 8px rgba(56,189,248,0.5));
+        filter: drop-shadow(0 0 8px var(--acc-glow));
       }
       .splash-logo-fallback {
         font-size: 2.4rem; line-height: 1;
@@ -196,18 +196,18 @@
       #globe-popup {
         display: none; position: fixed; z-index: 10000;
         width: 240px;
-        background: rgba(10,12,22,0.97);
+        background: color-mix(in srgb, var(--surf), transparent 5%);
         backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(56,189,248,0.25);
+        border: 1px solid color-mix(in srgb, var(--acc), transparent 70%);
         border-radius: 10px; overflow: hidden;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(56,189,248,0.06);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px color-mix(in srgb, var(--acc), transparent 94%);
         font-family: 'DM Sans', sans-serif;
         pointer-events: auto;
       }
       .globe-popup-header {
         display: flex; align-items: center; gap: 10px;
         padding: 12px 14px 10px;
-        border-bottom: 1px solid rgba(56,189,248,0.1);
+        border-bottom: 1px solid var(--brd);
       }
       .globe-popup-flag {
         width: 30px; height: 22px; border-radius: 3px; overflow: hidden;
@@ -215,28 +215,28 @@
         display: flex; align-items: center; justify-content: center;
         flex-shrink: 0; font-size: 0.85rem;
       }
-      .globe-popup-call { font-size: 1.05rem; font-weight: 700; color: #38bdf8; }
-      .globe-popup-country { font-size: 0.68rem; color: rgba(255,255,255,0.45); margin-top: 1px; }
+      .globe-popup-call { font-size: 1.05rem; font-weight: 700; color: var(--acc); }
+      .globe-popup-country { font-size: 0.68rem; color: var(--muted); margin-top: 1px; }
       .globe-popup-body { padding: 10px 14px; }
       .globe-popup-row {
         display: flex; justify-content: space-between; align-items: center;
-        font-size: 0.75rem; margin-bottom: 5px; color: rgba(255,255,255,0.55);
+        font-size: 0.75rem; margin-bottom: 5px; color: var(--muted);
       }
       .globe-popup-row:last-child { margin-bottom: 0; }
       .globe-popup-val {
         font-family: 'JetBrains Mono', monospace;
-        font-size: 0.72rem; color: #f0f4ff;
+        font-size: 0.72rem; color: var(--text);
       }
-      .globe-popup-val.accent { color: #38bdf8; font-weight: 700; }
+      .globe-popup-val.accent { color: var(--acc); font-weight: 700; }
       .globe-popup-close {
         position: absolute; top: 8px; right: 10px;
-        background: none; border: none; color: rgba(255,255,255,0.3);
+        background: none; border: none; color: var(--muted);
         cursor: pointer; font-size: 1rem; line-height: 1; padding: 2px;
         transition: color 0.15s;
       }
-      .globe-popup-close:hover { color: rgba(255,255,255,0.8); }
-      .globe-popup-cluster { padding: 12px 14px; font-size: 0.78rem; color: rgba(255,255,255,0.6); }
-      .globe-popup-cluster strong { color: #38bdf8; font-size: 1.1rem; }
+      .globe-popup-close:hover { color: var(--text); }
+      .globe-popup-cluster { padding: 12px 14px; font-size: 0.78rem; color: var(--muted); }
+      .globe-popup-cluster strong { color: var(--acc); font-size: 1.1rem; }
 
       /* FPV hint bar */
       #globe-fpv-hint {
@@ -260,13 +260,27 @@
         background: var(--acc);
         animation: globeQthPulse 1.8s ease-in-out infinite;
         pointer-events: none;
+        /* GPU ENCODING: Force hardware acceleration */
+        will-change: transform;
+        transform: translateZ(0);
       }
       /* Globe contact dots */
       .globe-contact-dot {
-        width: 8px; height: 8px; border-radius: 50%;
+        border-radius: 50%;
         border: 1px solid rgba(255,255,255,0.65);
         opacity: 0.9;
         cursor: pointer; pointer-events: auto;
+        display: flex; align-items: center; justify-content: center;
+        will-change: transform;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      }
+      .globe-dot-count {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 8px; font-weight: 700; line-height: 1;
+        color: rgba(255,255,255,0.95);
+        text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+        pointer-events: none; user-select: none;
       }
 
       /* FAQ accordion */
@@ -290,6 +304,24 @@
         font-size: 0.78rem; color: rgba(255,255,255,0.55); line-height: 1.75;
       }
       .faq-item.open .faq-a { display: block; }
+      
+      /* Tactical Toast / Advisory */
+      .tactical-toast {
+        position: fixed; bottom: 28px; left: calc(var(--sidebar-width) + (100vw - var(--sidebar-width)) / 2); transform: translateX(-50%) translateY(20px);
+        z-index: 100000; padding: 13px 22px;
+        background: color-mix(in srgb, var(--surf), transparent 15%);
+        backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+        border: 1px solid color-mix(in srgb, var(--acc), transparent 70%);
+        border-radius: 12px;
+        color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.78rem; font-weight: 500;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+        opacity: 0; pointer-events: none;
+        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+        display: flex; align-items: center; gap: 10px;
+      }
+      .tactical-toast.active { transform: translateX(-50%) translateY(0); opacity: 1; }
+      .tactical-toast-icon { color: var(--acc); font-size: 1rem; }
+      .tactical-toast b { color: var(--acc); font-weight: 700; }
 
       /* Password info tooltip */
       .pwd-info-icon {
@@ -334,8 +366,7 @@
     <div class="splash" id="splashScreen">
       <div class="splash-card">
         <div class="splash-hero">
-          <img src="logo.png" alt="Polarlog" class="splash-logo" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-          <span class="splash-logo-fallback" style="display:none;">❄️</span>
+          <img src="public/loading.png" alt="Polarlog" class="splash-logo">
           <div>
             <div class="splash-title">POLAR<span>PLOT</span></div>
             <div class="splash-sub">Real-time QSO Visualizer</div>
@@ -581,7 +612,7 @@
 
     <div id="loading-overlay">
       <div class="loader-content">
-        <div class="loader-logo">❄️</div>
+        <div class="loader-logo"><img src="public/loading.png" alt="Loading" style="width:3.5rem;height:3.5rem;object-fit:contain;"></div>
         <div class="progress-container">
           <div id="loading-progress-bar"></div>
         </div>
@@ -594,7 +625,7 @@
         <header>
           <div class="hheader">
             <div class="hicon">
-              <img src="logo.png" alt="Logo" class="main-logo" onerror="this.style.display='none'">
+              <img src="public/loading.png" alt="Logo" class="main-logo">
             </div>
             <div class="hmeta">
               <div class="htitle">POLAR<span>PLOT</span></div>
@@ -788,7 +819,17 @@
       </aside>
 
       <div id="map"></div>
-      <div id="globe-container" class="globe-container"></div>
+      <div id="globe-container" class="globe-container">
+        <div id="globe-arc-overlay">
+          <div class="globe-arc-overlay-inner">
+            <div class="loader-logo" style="margin-bottom:18px;"><img src="public/loading.png" alt="" style="width:2.8rem;height:2.8rem;object-fit:contain;"></div>
+            <div class="progress-container" style="margin-bottom:12px;">
+              <div id="globe-arc-progress-bar"></div>
+            </div>
+            <p id="globe-arc-status"></p>
+          </div>
+        </div>
+      </div>
 
       <!-- Universal Map UI Overlay (Persistent 2D/3D Controls) -->
       <div class="map-ui-overlay">
@@ -947,6 +988,11 @@
     <div id="globe-popup">
       <button class="globe-popup-close" onclick="hideGlobePopup()">×</button>
       <div id="globe-popup-inner"></div>
+    </div>
+
+    <!-- Tactical Advisory Toast -->
+    <div id="tactical-toast" class="tactical-toast">
+      <div id="tactical-toast-msg"></div>
     </div>
 
     <!-- FPV mode hint -->

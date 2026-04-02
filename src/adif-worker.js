@@ -90,11 +90,11 @@ self.onmessage = function(e) {
             const qso = parseRecord(record);
             if (qso.CALL) qsos.push(qso);
             
-            // Stream chunks every 300 records or at the end
-            if (i % 300 === 0 && qsos.length > 0) {
-                self.postMessage({ 
-                    action: 'chunkResult', 
-                    data: qsos.slice(chunkCount * 300) 
+            // Stream chunks every 1000 records or at the end
+            if (i % 1000 === 0 && qsos.length > 0) {
+                self.postMessage({
+                    action: 'chunkResult',
+                    data: qsos.slice(chunkCount * 1000)
                 });
                 chunkCount++;
                 self.postMessage({ action: 'progress', percent: Math.round((i / total) * 100) });

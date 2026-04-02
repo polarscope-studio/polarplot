@@ -30,6 +30,8 @@ export class MapEngine {
         maxClusterRadius: 50,
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,    // TACTICAL DRILL-DOWN: Click to zoom in
+        animate: true,
         iconCreateFunction: this.createClusterIcon
     }).addTo(this.map);
 
@@ -42,6 +44,10 @@ export class MapEngine {
     // Add Zoom Control at bottom right
     this.homeLocation = null;
     this.homeMarker = null;
+
+    this.map.on('zoomend', () => {
+      if (this.homeMarker) this.updateHomeMarker();
+    });
   }
 
   setTileLayer(url, options = {}) {
@@ -69,11 +75,14 @@ export class MapEngine {
           this.map.removeLayer(this.homeMarker);
       }
 
+      const zoom = this.map.getZoom();
+      const dotSize = Math.round(Math.max(10, Math.min(28, 10 + (zoom - 2) * 1.5)));
+      const wrapSize = dotSize + 14;
       const icon = L.divIcon({
           className: 'beacon-pulse',
-          html: '<div class="home-beacon" style="width: 10px; height: 10px;"></div>',
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
+          html: `<div class="home-beacon" style="width:${dotSize}px;height:${dotSize}px;"></div>`,
+          iconSize: [wrapSize, wrapSize],
+          iconAnchor: [wrapSize / 2, wrapSize / 2]
       });
 
       this.homeMarker = L.marker(this.homeLocation, { 
@@ -99,48 +108,36 @@ export class MapEngine {
     const lon = parseFloat(latest.LON);
 
     const tactical = options.tactical || {};
-    const cName = tactical.name || latest.COUNTRY || latest.DXCC || 'Unknown Country';
+    const cName    = tactical.name || latest.COUNTRY || latest.DXCC || 'Unknown Country';
     const flagHtml = tactical.flagHtml || '📡';
-    
-    let rangeRow = '';
-    if (tactical.dist) {
-      rangeRow = `
-        <div class="scard-row" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
-          <span style="opacity: 0.5;">Range:</span>
-          <span style="font-family: var(--font-mono); color: var(--acc); font-weight: bold;">${tactical.dist}</span>
-        </div>
-      `;
-    }
+    const band     = latest.BAND || 'N/A';
+    const mode     = latest.MODE || 'N/A';
+
+    const _months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const _fd      = raw => (!raw || raw.length < 8) ? null
+        : `${raw.slice(6,8)}-${_months[+raw.slice(4,6)-1]||'?'}-${raw.slice(0,4)}`;
+    const _ft      = raw => (!raw || raw.length < 4) ? '' : ` ${raw.slice(0,2)}:${raw.slice(2,4)}z`;
+    const lastDate = _fd(latest.QSO_DATE);
+    const lastTime = lastDate ? _ft(latest.TIME_ON) : '';
 
     const popupContent = `
-      <div class="station-card">
-        <div class="scard-header" style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-          <div class="scard-icon" style="width: 32px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
-            ${flagHtml}
-          </div>
-          <div>
-            <div class="scard-call" style="font-size: 1.2rem; font-weight: bold; color: var(--acc);">${latest.CALL}</div>
-            <div class="scard-loc" style="font-size: 0.7rem; opacity: 0.6;">${cName}</div>
-          </div>
+      <div class="globe-popup-header" style="position:relative;">
+        <div class="globe-popup-flag">${flagHtml}</div>
+        <div>
+          <div class="globe-popup-call" style="color:${color}">${latest.CALL}</div>
+          <div class="globe-popup-country">${cName}</div>
         </div>
-        <div class="scard-body" style="padding: 10px 0; border-top: 1px solid var(--brd); margin-top: 5px;">
-          ${rangeRow}
-          <div class="scard-row" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
-            <span style="opacity: 0.5;">Grid:</span>
-            <span style="font-family: var(--font-mono);">${latest.GRIDSQUARE || 'N/A'}</span>
-          </div>
-          <div class="scard-row" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
-            <span style="opacity: 0.5;">Band:</span>
-            <span style="font-family: var(--font-mono);">${latest.BAND || 'N/A'}</span>
-          </div>
-          <div class="scard-row" style="display: flex; justify-content: space-between; font-size: 0.8rem;">
-            <span style="opacity: 0.5;">Contacts:</span>
-            <span style="font-family: var(--font-mono); color: var(--acc); font-weight: bold;">${historyCount}</span>
-          </div>
-        </div>
-        <button class="scard-btn btn-show-history" style="margin-top: 10px; width: 100%; padding: 8px; background: rgba(56, 189, 248, 0.1); border: 1px solid var(--acc); color: var(--acc); border-radius: 4px; cursor: pointer; font-family: var(--font-mono); font-size: 0.75rem;">
-          📜 Show All QSOs
-        </button>
+      </div>
+      <div class="globe-popup-body">
+        ${tactical.dist ? `<div class="globe-popup-row"><span>Range</span><span class="globe-popup-val" style="color:${color};font-weight:700;">${tactical.dist}</span></div>` : ''}
+        <div class="globe-popup-row"><span>Band</span><span class="globe-popup-val" style="color:${color};font-weight:600;">${band}</span></div>
+        <div class="globe-popup-row"><span>Mode</span><span class="globe-popup-val">${mode}</span></div>
+        <div class="globe-popup-row"><span>Grid</span><span class="globe-popup-val">${latest.GRIDSQUARE || 'N/A'}</span></div>
+        ${lastDate ? `<div class="globe-popup-row"><span>Last QSO</span><span class="globe-popup-val">${lastDate}${lastTime}</span></div>` : ''}
+        <div class="globe-popup-row"><span>QSOs</span><span class="globe-popup-val" style="color:${color};font-weight:700;">${historyCount}</span></div>
+      </div>
+      <div style="padding:0 14px 12px;">
+        <button class="scard-btn btn-show-history" style="width:100%;padding:7px;background:color-mix(in srgb,${color},transparent 88%);border:1px solid ${color};color:${color};border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">📜 Show All QSOs</button>
       </div>
     `;
 
@@ -157,7 +154,7 @@ export class MapEngine {
       icon: dotIcon,
       stationData: Array.isArray(qso) ? qso : [qso]
     });
-    clusterMarker.bindPopup(popupContent);
+    clusterMarker.bindPopup(() => popupContent);
     this.markers.addLayer(clusterMarker);
 
     // 2. The standalone version (CircleMarker-based for Native Canvas speed)
@@ -170,7 +167,7 @@ export class MapEngine {
       fillOpacity: 0.8,
       stationData: Array.isArray(qso) ? qso : [qso]
     });
-    standaloneMarker.bindPopup(popupContent);
+    standaloneMarker.bindPopup(() => popupContent);
     this.standaloneMarkers.addLayer(standaloneMarker);
 
     // Interactive Trigger
@@ -207,7 +204,7 @@ export class MapEngine {
           weight: 1.5,
           opacity: 0.4,
           color: color,
-          steps: 50,
+          steps: 24,
           wrap: true
       });
       
