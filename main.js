@@ -599,16 +599,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.body.classList.toggle('sidebar-collapsed', collapsed);
 
             if (!globeVisible) {
-                // Pump invalidateSize throughout the CSS transition so tiles load progressively
                 const mapInstance = mapEngine?.map;
                 if (mapInstance) {
-                    const steps = 6;
-                    for (let i = 1; i <= steps; i++) {
-                        setTimeout(() => {
-                            mapInstance.invalidateSize({ animate: false, pan: false });
-                            if (i === steps) mapInstance.fire('moveend');
-                        }, Math.round((300 / steps) * i));
-                    }
+                    const duration = 320;
+                    const start = performance.now();
+                    const tick = (now) => {
+                        mapInstance.invalidateSize({ animate: false });
+                        if (now - start < duration) requestAnimationFrame(tick);
+                        else mapInstance.fire('moveend');
+                    };
+                    requestAnimationFrame(tick);
                 }
             } else if (globeInstance) {
                 // Drive globe resize every frame for the full transition duration
@@ -1653,6 +1653,7 @@ function toggleGlobe() {
         if (!globeInitialized) {
             initGlobe(globeEl);
             globeInitialized = true;
+            updateGlobeData();
 
             // Wire globe-specific buttons after the bar exists
             document.getElementById('globe-btn-arcs')?.addEventListener('click', function() {
@@ -1939,7 +1940,8 @@ function _rebuildGlobeContacts() {
 
 // Rebuilds only the HTML dots — called on zoom change and cluster toggle
 function updateGlobeDots() {
-    if (!globeInstance || !_globeContactList.length) return;
+    if (!globeInstance) return;
+    if (!_globeContactList.length && !_globeHasHome) return;
 
     const alt = globeInstance.pointOfView().altitude;
     const isFiltered = !!(searchQuery || selectedDXCC);
@@ -2025,11 +2027,11 @@ function updateGlobeArcs() {
 }
 
 function updateGlobeData() {
-    if (!globeInstance || !currentQSOs.length) return;
+    if (!globeInstance) return;
     globeInstance.resumeAnimation();
     _rebuildGlobeContacts();
     updateGlobeDots();
-    updateGlobeArcs();
+    if (currentQSOs.length) updateGlobeArcs();
 }
 
 // Projects a globe lat/lng to screen coordinates using the camera matrices.
