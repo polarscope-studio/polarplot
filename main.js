@@ -1392,16 +1392,22 @@ async function takeScreenshot(cameraView = false) {
             // ════════════════════════════════════════════════════════════════
 
             const savedPov = globeInstance.pointOfView();
+            const globeEl  = document.getElementById('globe-container');
+
+            // Veil hides camera movement from user while we reposition for capture
+            const _veil = document.createElement('div');
+            _veil.style.cssText = `position:fixed;inset:0;z-index:9999997;pointer-events:none;background:${cBg};`;
+            document.body.appendChild(_veil);
+
             if (!cameraView) {
-                globeInstance.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
-                await new Promise(r => setTimeout(r, 200));
-                globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
+                globeInstance.resumeAnimation();
+                globeInstance.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 0);
+                await new Promise(r => setTimeout(r, 180)); // let globe.gl reposition HTML dots
             }
 
             status.textContent = 'Capturing globe…';
             globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
             const glCanvas = globeInstance.renderer().domElement;
-            const globeEl  = document.getElementById('globe-container');
 
             const mapW = glCanvas.width;
             const mapH = glCanvas.height;
@@ -1416,8 +1422,9 @@ async function takeScreenshot(cameraView = false) {
                 ignoreElements: el => el.id === 'globe-arc-overlay'
             });
 
-            // Restore camera if we moved it
+            // Restore camera, remove veil
             if (!cameraView) globeInstance.pointOfView(savedPov, 0);
+            document.body.removeChild(_veil);
 
             // outH = mapH so legend panel never extends beyond the globe frame
             const outW = mapW + PW * scale;
@@ -1516,6 +1523,7 @@ function toggleGlobe() {
     if (globeVisible) {
         mapEl.style.display   = 'none';
         globeEl.classList.add('active');
+        document.getElementById('overlay-picker')?.classList.remove('visible');
 
         // Always enforce paths off + clustering on when entering globe
         const chkPaths    = document.getElementById('chk-paths');
@@ -1570,6 +1578,7 @@ function toggleGlobe() {
         globeEl.classList.remove('active');
         mapEl.style.display = '';
         mapEngine.map.invalidateSize();
+        document.getElementById('overlay-picker')?.classList.remove('visible');
     }
 }
 
