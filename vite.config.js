@@ -18,6 +18,7 @@ export default defineConfig({
       writeBundle() {
         // Copy root-level assets that aren't in public/ into the dist
         try { copyFileSync('loading.png', 'dist/loading.png'); } catch {}
+        try { copyFileSync('logo.png', 'dist/logo.png'); } catch {}
       }
     }
   ]
