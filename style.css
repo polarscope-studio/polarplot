@@ -125,9 +125,16 @@ body { font-family: var(--font-main); color: var(--text); display: flex; }
   border-width: 1.5px;
 }
 .band-chip:hover {
-  opacity: 0.9;
-  filter: saturate(0.9) brightness(1.05);
-  background: color-mix(in srgb, var(--chip-color, var(--acc)), transparent 85%);
+  opacity: 0.85;
+  filter: saturate(1) brightness(1.2);
+  background: color-mix(in srgb, var(--chip-color, var(--acc)), transparent 80%);
+  border-color: color-mix(in srgb, var(--chip-color, var(--acc)), transparent 10%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--chip-color, var(--acc)), transparent 45%);
+}
+.band-chip.active:hover {
+  opacity: 1;
+  filter: saturate(1.1) brightness(1.25);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4), 0 0 14px color-mix(in srgb, var(--chip-color, var(--acc)), transparent 40%);
 }
 
 .dropzone { border: 2px dashed var(--brd); padding: 20px; text-align: center; border-radius: 8px; cursor: pointer; color: var(--muted); transition: all 0.2s; }

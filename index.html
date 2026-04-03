@@ -807,8 +807,22 @@
             </div>
           </div>
           <div class="field-group" style="margin-top: 8px;">
-            <label for="cors-proxy">Data Proxy</label>
+            <label for="cors-proxy" style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="display:flex;align-items:center;gap:5px;">Data Proxy <span class="pwd-info-icon" id="proxy-info-icon">ℹ</span></span>
+              <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" rel="noopener" style="font-size:0.68rem;color:var(--acc);font-weight:600;text-decoration:none;opacity:0.8;" title="Click to activate the demo proxy in a new tab">Activate Proxy ↗</a>
+            </label>
             <input type="text" id="cors-proxy" class="field-input" placeholder="CORS Proxy URL (optional)..." value="https://cors-anywhere.herokuapp.com/">
+          </div>
+          <div class="field-group" style="margin-top: 8px;">
+            <label style="display:flex;align-items:center;justify-content:space-between;">
+              <span>QRZ Logbook Reference</span>
+              <span style="font-size:0.68rem;color:var(--muted);font-weight:400;">CORS-free alternative</span>
+            </label>
+            <div id="qrz-adif-dropzone" style="border:1px dashed var(--brd);border-radius:6px;padding:10px 12px;text-align:center;cursor:pointer;font-size:0.72rem;color:var(--muted);font-family:var(--font-mono);transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--acc)'" onmouseout="this.style.borderColor='var(--brd)'">
+              Drop QRZ ADIF export here or click to browse
+              <input type="file" id="qrz-adif-input" accept=".adif,.adi,.txt" style="display:none">
+            </div>
+            <div id="qrz-adif-status" style="font-size:0.68rem;font-family:var(--font-mono);color:var(--acc);margin-top:4px;display:none;"></div>
           </div>
         </section>
       </aside>
@@ -1012,6 +1026,14 @@
       <div style="position:absolute;top:100%;left:20px;border:5px solid transparent;border-top-color:rgba(56,189,248,0.3);"></div>
     </div>
 
+    <!-- Data Proxy tooltip -->
+    <div id="proxy-tooltip" style="display:none;position:fixed;width:260px;background:rgba(10,12,22,0.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:12px 14px;font-size:0.72rem;font-weight:400;font-family:'DM Sans',sans-serif;color:rgba(255,255,255,0.6);line-height:1.65;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:99999;pointer-events:none;white-space:normal;text-transform:none;letter-spacing:0;">
+      A <strong>CORS proxy</strong> is needed because QRZ's servers block direct browser requests. The proxy forwards them server-side to get around this.<br><br>
+      <strong>✓ Works when:</strong> You visit <em>Activate Proxy ↗</em> first and click "Request temporary access" in that tab — access lasts a few hours.<br><br>
+      <strong>✗ Won't work when:</strong> You haven't activated it, the demo quota is full, or you're on a network that blocks it.<br><br>
+      <strong>Better alternative:</strong> Export your QRZ logbook as ADIF and drop it into the <em>QRZ Logbook Reference</em> box below — no proxy needed at all.
+    </div>
+
     <!-- Password info tooltip (fixed, renders over everything) -->
     <div id="pwd-tooltip">
       <strong>Your privacy is safe.</strong><br>
@@ -1091,6 +1113,7 @@
         });
 
         attachTooltip('pwd-info-icon', 'pwd-tooltip');
+        attachTooltip('proxy-info-icon', 'proxy-tooltip');
       });
     </script>
     <!-- Screenshot Modal -->
@@ -1108,12 +1131,12 @@
           <label class="ss-check-row"><input type="checkbox" id="ss-dxcc" checked><span>Top Countries Worked</span></label>
           <label class="ss-check-row"><input type="checkbox" id="ss-modes"><span>Mode Breakdown</span></label>
         </div>
-        <div style="display:flex;gap:10px;">
-          <button id="ss-cancel" style="flex:1;padding:9px;background:var(--surf2);border:1px solid var(--brd);color:var(--muted);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CANCEL</button>
-          <button id="ss-capture" style="flex:2;padding:9px;background:color-mix(in srgb,var(--acc),transparent 80%);border:1px solid var(--acc);color:var(--acc);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-            CAPTURE PNG
-          </button>
+        <div style="display:flex;gap:10px;flex-direction:column;">
+          <div style="display:flex;gap:10px;">
+            <button id="ss-capture-full" style="flex:1;padding:9px;background:color-mix(in srgb,var(--acc),transparent 80%);border:1px solid var(--acc);color:var(--acc);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">FULL MAP VIEW</button>
+            <button id="ss-capture-cam" style="flex:1;padding:9px;background:var(--surf2);border:1px solid color-mix(in srgb,var(--acc),transparent 50%);color:var(--text);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CAMERA VIEW</button>
+          </div>
+          <button id="ss-cancel" style="padding:7px;background:transparent;border:1px solid var(--brd);color:var(--muted);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CANCEL</button>
         </div>
         <p id="ss-status" style="font-size:0.7rem;color:var(--muted);text-align:center;margin:12px 0 0;min-height:1em;"></p>
       </div>

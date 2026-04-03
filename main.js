@@ -615,7 +615,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('ss-cancel')?.addEventListener('click', () => {
             document.getElementById('screenshot-modal').style.display = 'none';
         });
-        document.getElementById('ss-capture')?.addEventListener('click', () => takeScreenshot());
+        document.getElementById('ss-capture-full')?.addEventListener('click', () => takeScreenshot(false));
+        document.getElementById('ss-capture-cam')?.addEventListener('click',  () => takeScreenshot(true));
 
         // Remove old internal map listeners
         // mapEngine.map.on('globebtnclick', toggleGlobe);
@@ -866,33 +867,143 @@ document.addEventListener('DOMContentLoaded', async () => {
             isResolving = true;
             btn.textContent = 'RESOLVING...';
             stats.style.display = 'block';
-            let resolvedCount = 0, totalToResolve = missing.length, processedCount = 0;
             updateLoadingStatus(true, `Pulse Engine Initiated...`, 5);
             const qrz = new QRZService(user, pass, key, proxy);
-            let idx = 0, batchSize = 5, lastRedraw = Date.now();
-            const processPulse = async () => {
-                while (idx < totalToResolve) {
-                    const qso = missing[idx++];
-                    try {
-                        const data = await qrz.lookup(qso.CALL);
-                        processedCount++;
-                        if (data) { 
-                            qso.LAT = data.lat; 
-                            qso.LON = data.lon; 
-                            qso.GRIDSQUARE = data.grid; 
-                            if (data.dxcc) qso.DXCC = data.dxcc;
-                            if (data.country) qso.COUNTRY = data.country;
-                            resolvedCount++; 
-                        }
-                        const percent = Math.floor((processedCount / totalToResolve) * 100);
-                        stats.textContent = `STATIONS PROCESSED: ${processedCount} / ${totalToResolve} (${resolvedCount} FOUND)`;
-                        updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${totalToResolve}`, percent);
-                        if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
-                    } catch (e) { processedCount++; updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${totalToResolve}`, Math.floor((processedCount / totalToResolve) * 100)); }
+
+            // ── Phase 1: Cross-reference QRZ logbook ───────────────────────
+            let logbookMap = null;
+            let logbookMatched = 0;
+            try {
+                stats.textContent = 'Fetching QRZ logbook...';
+                updateLoadingStatus(true, 'Fetching QRZ Logbook...', 8);
+                logbookMap = await qrz.fetchLogbook();
+                // Apply logbook matches immediately
+                for (const qso of missing) {
+                    const entry = logbookMap.get(qso.CALL);
+                    if (!entry) continue;
+                    qso.LAT = entry.lat;
+                    qso.LON = entry.lon;
+                    if (entry.grid)    qso.GRIDSQUARE = entry.grid;
+                    if (entry.country) qso.COUNTRY    = entry.country;
+                    if (entry.dxcc)    qso.DXCC       = entry.dxcc;
+                    logbookMatched++;
                 }
-            };
-            await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
+                stats.textContent = `QRZ Logbook: ${logbookMatched} matched from ${logbookMap.size} entries`;
+                updateLoadingStatus(true, `Logbook: ${logbookMatched}/${missing.length} resolved`, 15);
+                processQSOs(currentQSOs, false);
+                await new Promise(r => setTimeout(r, 400)); // brief pause so user sees the count
+            } catch (e) {
+                // Logbook fetch is best-effort — fall through to XML lookups
+                stats.textContent = `Logbook unavailable (${e.message.slice(0,40)}), using XML lookup...`;
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            // ── Phase 2: XML lookup for remaining unresolved contacts ───────
+            const stillMissing = missing.filter(q => !q.LAT || !q.LON);
+            let resolvedCount = logbookMatched, totalToResolve = stillMissing.length, processedCount = 0;
+            let lastRedraw = Date.now();
+
+            if (stillMissing.length > 0) {
+                stats.textContent = `Logbook: ${logbookMatched} matched. XML lookup: 0 / ${stillMissing.length}...`;
+                let idx = 0, batchSize = 5;
+                const processPulse = async () => {
+                    while (idx < totalToResolve) {
+                        const qso = stillMissing[idx++];
+                        try {
+                            const data = await qrz.lookup(qso.CALL);
+                            processedCount++;
+                            if (data) {
+                                qso.LAT = data.lat;
+                                qso.LON = data.lon;
+                                qso.GRIDSQUARE = data.grid;
+                                if (data.dxcc)    qso.DXCC    = data.dxcc;
+                                if (data.country) qso.COUNTRY = data.country;
+                                resolvedCount++;
+                            }
+                            const percent = 15 + Math.floor((processedCount / totalToResolve) * 85);
+                            stats.textContent = `Logbook: ${logbookMatched} · XML: ${processedCount}/${stillMissing.length} (${resolvedCount} total resolved)`;
+                            updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, percent);
+                            if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
+                        } catch (e) { processedCount++; updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, 15 + Math.floor((processedCount / totalToResolve) * 85)); }
+                    }
+                };
+                await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
+            }
+
             isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false); btn.disabled = false; btn.textContent = 'RESOLVE MISSING';
+        }
+
+        // ── QRZ ADIF cross-reference (CORS-free) ────────────────────────
+        const qrzAdifDropzone = document.getElementById('qrz-adif-dropzone');
+        const qrzAdifInput    = document.getElementById('qrz-adif-input');
+        const qrzAdifStatus   = document.getElementById('qrz-adif-status');
+
+        const applyQRZAdif = (text) => {
+            const eohIdx = text.toUpperCase().indexOf('<EOH>');
+            const dataPart = eohIdx !== -1 ? text.substring(eohIdx + 5) : text;
+            const records = dataPart.split(/<EOR>/i);
+            const refMap = new Map();
+            const decodeCoord = (s) => {
+                if (!s) return null;
+                const dir = s.charAt(0).toUpperCase();
+                if (!['N','S','E','W'].includes(dir)) { const v = parseFloat(s); return isNaN(v) ? null : v; }
+                const parts = s.substring(1).trim().split(' ');
+                let dec = parts.length >= 2 ? parseFloat(parts[0]) + parseFloat(parts[1]) / 60 : parseFloat(s.substring(1));
+                return (dir === 'S' || dir === 'W') ? -dec : dec;
+            };
+            for (const record of records) {
+                if (!record.trim()) continue;
+                const qso = {};
+                const regex = /<([^:>]+):(\d+)(?::[^>]+)?>([^<]*)/gi;
+                let m;
+                while ((m = regex.exec(record)) !== null) qso[m[1].toUpperCase()] = m[3].substring(0, parseInt(m[2])).trim();
+                if (!qso.CALL) continue;
+                let lat = decodeCoord(qso.LAT), lon = decodeCoord(qso.LON);
+                if ((lat == null || lon == null) && qso.GRIDSQUARE?.length >= 4) {
+                    const g = qso.GRIDSQUARE.toUpperCase();
+                    lon = (g.charCodeAt(0)-65)*20-180 + parseInt(g[2])*2 + (g.length>=6 ? (g.charCodeAt(4)-65)*(2/24)+(1/24) : 1);
+                    lat = (g.charCodeAt(1)-65)*10-90  + parseInt(g[3])   + (g.length>=6 ? (g.charCodeAt(5)-65)*(1/24)+(0.5/24) : 0.5);
+                }
+                if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) continue;
+                const existing = refMap.get(qso.CALL);
+                if (!existing || (!existing.grid && qso.GRIDSQUARE))
+                    refMap.set(qso.CALL, { lat: String(lat), lon: String(lon), grid: qso.GRIDSQUARE||null, country: qso.COUNTRY||qso.DXCC_COUNTRY||null, dxcc: qso.DXCC||null });
+            }
+            if (!refMap.size) { qrzAdifStatus.style.display='block'; qrzAdifStatus.style.color='var(--muted)'; qrzAdifStatus.textContent='No mappable contacts found in file.'; return; }
+            let matched = 0;
+            for (const qso of currentQSOs) {
+                const entry = refMap.get(qso.CALL);
+                if (!entry) continue;
+                qso.LAT = entry.lat; qso.LON = entry.lon;
+                if (entry.grid)    qso.GRIDSQUARE = entry.grid;
+                if (entry.country) qso.COUNTRY    = entry.country;
+                if (entry.dxcc)    qso.DXCC       = entry.dxcc;
+                matched++;
+            }
+            qrzAdifStatus.style.display = 'block';
+            qrzAdifStatus.style.color = matched > 0 ? 'var(--acc)' : 'var(--muted)';
+            qrzAdifStatus.textContent = matched > 0
+                ? `✓ ${matched} contacts enriched from ${refMap.size} logbook entries`
+                : 'No callsign matches found between logs.';
+            if (matched > 0) { processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); }
+        };
+
+        if (qrzAdifDropzone) {
+            qrzAdifDropzone.addEventListener('click', () => qrzAdifInput?.click());
+            qrzAdifDropzone.addEventListener('dragover', e => { e.preventDefault(); qrzAdifDropzone.style.borderColor='var(--acc)'; });
+            qrzAdifDropzone.addEventListener('dragleave', () => qrzAdifDropzone.style.borderColor='var(--brd)');
+            qrzAdifDropzone.addEventListener('drop', e => {
+                e.preventDefault(); qrzAdifDropzone.style.borderColor='var(--brd)';
+                const file = e.dataTransfer.files[0]; if (!file) return;
+                const reader = new FileReader(); reader.onload = ev => applyQRZAdif(ev.target.result); reader.readAsText(file);
+            });
+        }
+        if (qrzAdifInput) {
+            qrzAdifInput.addEventListener('change', () => {
+                const file = qrzAdifInput.files[0]; if (!file) return;
+                const reader = new FileReader(); reader.onload = ev => applyQRZAdif(ev.target.result); reader.readAsText(file);
+                qrzAdifInput.value = '';
+            });
         }
 
         mapEngine.map.on('popupopen', (e) => {
@@ -1040,12 +1151,14 @@ function finalizeParsedData(data) {
 
 // ─── Screenshot Export ───────────────────────────────────────────────────────
 
-async function takeScreenshot() {
-    const modal   = document.getElementById('screenshot-modal');
-    const status  = document.getElementById('ss-status');
-    const capture = document.getElementById('ss-capture');
-    capture.disabled = true;
-    status.textContent = 'Rendering map…';
+async function takeScreenshot(cameraView = false) {
+    const modal  = document.getElementById('screenshot-modal');
+    const status = document.getElementById('ss-status');
+    const btnFull = document.getElementById('ss-capture-full');
+    const btnCam  = document.getElementById('ss-capture-cam');
+    if (btnFull) btnFull.disabled = true;
+    if (btnCam)  btnCam.disabled  = true;
+    status.textContent = 'Rendering…';
 
     const inclCallsign = document.getElementById('ss-callsign')?.checked;
     const inclStats    = document.getElementById('ss-stats')?.checked;
@@ -1054,40 +1167,16 @@ async function takeScreenshot() {
     const inclModes    = document.getElementById('ss-modes')?.checked;
 
     try {
-        // Grab CSS variable values from root for canvas drawing
         const rootStyle = getComputedStyle(document.documentElement);
-        const cBg   = rootStyle.getPropertyValue('--bg').trim()   || '#080b12';
-        const cSurf = rootStyle.getPropertyValue('--surf').trim() || '#0f1624';
-        const cAcc  = rootStyle.getPropertyValue('--acc').trim()  || '#38bdf8';
-        const cText = rootStyle.getPropertyValue('--text').trim() || '#e2e8f0';
-        const cMuted= rootStyle.getPropertyValue('--muted').trim()|| '#64748b';
-        const cBrd  = rootStyle.getPropertyValue('--brd').trim()  || '#1e293b';
+        const cBg    = rootStyle.getPropertyValue('--bg').trim()   || '#080b12';
+        const cSurf  = rootStyle.getPropertyValue('--surf').trim() || '#0f1624';
+        const cAcc   = rootStyle.getPropertyValue('--acc').trim()  || '#38bdf8';
+        const cText  = rootStyle.getPropertyValue('--text').trim() || '#e2e8f0';
+        const cMuted = rootStyle.getPropertyValue('--muted').trim()|| '#64748b';
+        const cBrd   = rootStyle.getPropertyValue('--brd').trim()  || '#1e293b';
+        const scale  = window.devicePixelRatio || 1;
 
-        // ── 1. Capture the map/globe area ──────────────────────────────────
-        let mapCanvas;
-        if (globeVisible && globeInstance) {
-            // Globe: WebGL canvas is directly readable (preserveDrawingBuffer:true)
-            globeInstance.renderer().render(
-                globeInstance.scene(),
-                globeInstance.camera()
-            );
-            mapCanvas = globeInstance.renderer().domElement;
-        } else {
-            // 2D map: use html2canvas on the #map element
-            const mapEl = document.getElementById('map');
-            mapCanvas = await html2canvas(mapEl, {
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: cBg,
-                scale: window.devicePixelRatio || 1,
-                logging: false
-            });
-        }
-
-        const mapW = mapCanvas.width;
-        const mapH = mapCanvas.height;
-
-        // ── 2. Build legend data ───────────────────────────────────────────
+        // ── Build stat data (shared between 2D and 3D paths) ───────────────
         const call      = document.getElementById('my-call')?.value?.trim() || 'N/A';
         const grid      = document.getElementById('my-grid')?.value?.trim() || '';
         const totalQSOs = currentQSOs.length;
@@ -1095,204 +1184,235 @@ async function takeScreenshot() {
         const bCount    = new Set(currentQSOs.map(q => q.BAND?.toUpperCase()).filter(Boolean)).size;
         const mCount    = new Set(currentQSOs.map(q => q.MODE).filter(Boolean)).size;
 
-        // Band counts
         const bandCounts = {};
         currentQSOs.forEach(q => { const b = q.BAND?.toUpperCase(); if (b) bandCounts[b] = (bandCounts[b]||0)+1; });
         const bandsSorted = Object.entries(bandCounts).sort((a,b) => b[1]-a[1]).slice(0,8);
 
-        // DXCC top 8
         const dxccCounts = {};
         currentQSOs.forEach(q => { const c = q.COUNTRY||q.DXCC||''; if(c) dxccCounts[c]=(dxccCounts[c]||0)+1; });
         const dxccSorted = Object.entries(dxccCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
 
-        // Mode counts
         const modeCounts = {};
         currentQSOs.forEach(q => { const m = q.MODE||''; if(m) modeCounts[m]=(modeCounts[m]||0)+1; });
         const modesSorted = Object.entries(modeCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
 
-        // ── 3. Measure legend height ───────────────────────────────────────
-        const LGND_W   = 260;
-        const PAD      = 18;
-        const LINE     = 20;
-        const SEC_GAP  = 14;
-        const HEAD_H   = 28;
-        let legendH    = PAD;
+        // ── Shared drawing helpers (used by both 2D and 3D side panel) ──────
+        const PAD  = 18;
+        const LINE = 20;
+        const GAP  = 14;
+        const HEAD = 28;
+        const PW   = 260;
 
-        if (inclCallsign) {
-            legendH += HEAD_H + LINE + (grid ? LINE : 0) + SEC_GAP;
-        }
-        if (inclStats) {
-            legendH += HEAD_H + LINE * 4 + SEC_GAP;
-        }
-        if (inclBands && bandsSorted.length) {
-            legendH += HEAD_H + bandsSorted.length * LINE + SEC_GAP;
-        }
-        if (inclDXCC && dxccSorted.length) {
-            legendH += HEAD_H + dxccSorted.length * LINE + SEC_GAP;
-        }
-        if (inclModes && modesSorted.length) {
-            legendH += HEAD_H + modesSorted.length * LINE + SEC_GAP;
-        }
-        legendH += PAD;
+        const drawLegend = (ctx, lxL, outH) => {
+            let cy = PAD;
 
-        // ── 4. Compose final canvas ────────────────────────────────────────
-        const scale   = window.devicePixelRatio || 1;
-        const outW    = mapW + LGND_W * scale;
-        const outH    = Math.max(mapH, legendH * scale);
-
-        const out     = document.createElement('canvas');
-        out.width     = outW;
-        out.height    = outH;
-        const ctx     = out.getContext('2d');
-
-        // Background
-        ctx.fillStyle = cBg;
-        ctx.fillRect(0, 0, outW, outH);
-
-        // Map
-        ctx.drawImage(mapCanvas, 0, 0, mapW, mapH);
-
-        // Legend panel background
-        const lx = mapW;
-        ctx.fillStyle = cSurf;
-        ctx.fillRect(lx, 0, LGND_W * scale, outH);
-
-        // Border line
-        ctx.strokeStyle = cBrd;
-        ctx.lineWidth   = scale;
-        ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, outH); ctx.stroke();
-
-        // Draw legend text — scale ctx so we work in logical px
-        ctx.save();
-        ctx.scale(scale, scale);
-        const lxL = mapW / scale; // left edge of legend in logical px
-
-        let cy = PAD;
-
-        const drawHeading = (txt) => {
-            ctx.font = `700 10px "JetBrains Mono", monospace`;
-            ctx.fillStyle = cAcc;
-            ctx.fillText(txt.toUpperCase(), lxL + PAD, cy + 10);
-            cy += HEAD_H;
-            ctx.strokeStyle = cBrd;
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(lxL + PAD, cy - 4);
-            ctx.lineTo(lxL + LGND_W - PAD, cy - 4);
-            ctx.stroke();
-        };
-
-        const drawRow = (label, value, valColor) => {
-            ctx.font = `400 10px "DM Sans", sans-serif`;
-            ctx.fillStyle = cMuted;
-            ctx.fillText(label, lxL + PAD, cy + 11);
-            ctx.font = `700 10px "JetBrains Mono", monospace`;
-            ctx.fillStyle = valColor || cText;
-            const valW = ctx.measureText(value).width;
-            ctx.fillText(value, lxL + LGND_W - PAD - valW, cy + 11);
-            cy += LINE;
-        };
-
-        const drawBar = (label, value, max, color) => {
-            ctx.font = `400 9px "JetBrains Mono", monospace`;
-            ctx.fillStyle = cMuted;
-            ctx.fillText(label, lxL + PAD, cy + 10);
-            const barX   = lxL + PAD + 54;
-            const barMaxW= LGND_W - PAD * 2 - 54 - 28;
-            const barW   = Math.max(2, (value / max) * barMaxW);
-            ctx.fillStyle = color + '33';
-            ctx.beginPath();
-            ctx.roundRect?.(barX, cy + 3, barMaxW, 10, 2) || ctx.rect(barX, cy + 3, barMaxW, 10);
-            ctx.fill();
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.roundRect?.(barX, cy + 3, barW, 10, 2) || ctx.rect(barX, cy + 3, barW, 10);
-            ctx.fill();
-            const valStr = String(value);
-            const vw = ctx.measureText(valStr).width;
-            ctx.fillStyle = cText;
-            ctx.font = `700 9px "JetBrains Mono", monospace`;
-            ctx.fillText(valStr, lxL + LGND_W - PAD - vw, cy + 10);
-            cy += LINE;
-        };
-
-        // Callsign section
-        if (inclCallsign) {
-            drawHeading('Station');
-            ctx.font = `700 14px "JetBrains Mono", monospace`;
-            ctx.fillStyle = cAcc;
-            ctx.fillText(call, lxL + PAD, cy + 13);
-            cy += LINE;
-            if (grid) {
-                ctx.font = `400 10px "JetBrains Mono", monospace`;
-                ctx.fillStyle = cMuted;
-                ctx.fillText(grid, lxL + PAD, cy + 11);
+            const drawHeading = (txt) => {
+                ctx.font = `700 10px "JetBrains Mono", monospace`;
+                ctx.fillStyle = cAcc;
+                ctx.fillText(txt.toUpperCase(), lxL + PAD, cy + 10);
+                cy += HEAD;
+                ctx.strokeStyle = cBrd; ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(lxL + PAD, cy - 4); ctx.lineTo(lxL + PW - PAD, cy - 4); ctx.stroke();
+            };
+            const drawRow = (label, value, valColor) => {
+                ctx.font = `400 10px "DM Sans", sans-serif`; ctx.fillStyle = cMuted;
+                ctx.fillText(label, lxL + PAD, cy + 11);
+                ctx.font = `700 10px "JetBrains Mono", monospace`; ctx.fillStyle = valColor || cText;
+                const vw = ctx.measureText(value).width;
+                ctx.fillText(value, lxL + PW - PAD - vw, cy + 11);
                 cy += LINE;
+            };
+            const drawBar = (label, value, max, color) => {
+                ctx.font = `400 9px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted;
+                ctx.fillText(label, lxL + PAD, cy + 10);
+                const bx = lxL + PAD + 54, bmw = PW - PAD * 2 - 54 - 28;
+                const bw = Math.max(2, (value / max) * bmw);
+                ctx.fillStyle = color + '33';
+                ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, cy+3, bmw, 10, 2); else ctx.rect(bx,cy+3,bmw,10); ctx.fill();
+                ctx.fillStyle = color;
+                ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, cy+3, bw, 10, 2); else ctx.rect(bx,cy+3,bw,10); ctx.fill();
+                ctx.font = `700 9px "JetBrains Mono", monospace`; ctx.fillStyle = cText;
+                const vw = ctx.measureText(String(value)).width;
+                ctx.fillText(String(value), lxL + PW - PAD - vw, cy + 10);
+                cy += LINE;
+            };
+
+            if (inclCallsign) {
+                drawHeading('Station');
+                ctx.font = `700 14px "JetBrains Mono", monospace`; ctx.fillStyle = cAcc;
+                ctx.fillText(call, lxL + PAD, cy + 13); cy += LINE;
+                if (grid) { ctx.font = `400 10px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted; ctx.fillText(grid, lxL + PAD, cy + 11); cy += LINE; }
+                cy += GAP;
             }
-            cy += SEC_GAP;
-        }
+            if (inclStats) {
+                drawHeading('Statistics');
+                drawRow('Total QSOs', String(totalQSOs), cAcc);
+                drawRow('DXCC Entities', String(dCount), cAcc);
+                drawRow('Bands Used', String(bCount));
+                drawRow('Modes Used', String(mCount));
+                cy += GAP;
+            }
+            if (inclBands && bandsSorted.length) {
+                drawHeading('Bands');
+                const bMax = bandsSorted[0][1];
+                bandsSorted.forEach(([b, n]) => drawBar(b, n, bMax, BAND_COLORS[b] || cAcc));
+                cy += GAP;
+            }
+            if (inclDXCC && dxccSorted.length) {
+                drawHeading('Countries Worked');
+                const dMax = dxccSorted[0][1];
+                dxccSorted.forEach(([c, n]) => drawBar(c.length > 18 ? c.slice(0,16)+'…' : c, n, dMax, cAcc));
+                cy += GAP;
+            }
+            if (inclModes && modesSorted.length) {
+                drawHeading('Modes');
+                const mMax = modesSorted[0][1];
+                modesSorted.forEach(([m, n]) => drawBar(m, n, mMax, '#a78bfa'));
+                cy += GAP;
+            }
 
-        // Stats section
-        if (inclStats) {
-            drawHeading('Statistics');
-            drawRow('Total QSOs', String(totalQSOs), cAcc);
-            drawRow('DXCC Entities', String(dCount), cAcc);
-            drawRow('Bands Used', String(bCount));
-            drawRow('Modes Used', String(mCount));
-            cy += SEC_GAP;
-        }
+            ctx.font = `400 8px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted + '88';
+            ctx.fillText('Polarlog', lxL + PAD, outH - 8);
+        };
 
-        // Bands section
-        if (inclBands && bandsSorted.length) {
-            drawHeading('Bands');
-            const bMax = bandsSorted[0][1];
-            bandsSorted.forEach(([band, cnt]) => {
-                drawBar(band, cnt, bMax, BAND_COLORS[band] || cAcc);
+        const download = (canvas) => {
+            const link = document.createElement('a');
+            link.download = `polarlog-${call}-${new Date().toISOString().slice(0,10)}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        };
+
+        if (globeVisible && globeInstance) {
+            // ════════════════════════════════════════════════════════════════
+            // GLOBE MODE — WebGL + HTML dots, side legend panel same as 2D
+            // ════════════════════════════════════════════════════════════════
+
+            // For full-map view, temporarily zoom out to show the whole globe
+            const savedPov = globeInstance.pointOfView();
+            if (!cameraView) {
+                globeInstance.pointOfView({ lat: savedPov.lat, lng: savedPov.lng, altitude: 2.5 });
+                await new Promise(r => setTimeout(r, 120)); // let Three.js update camera
+            }
+
+            status.textContent = 'Capturing globe…';
+            globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
+            const glCanvas = globeInstance.renderer().domElement;
+            const mapW = glCanvas.width;
+            const mapH = glCanvas.height;
+
+            status.textContent = 'Capturing dots…';
+            const globeEl = document.getElementById('globe-container');
+            const dotsCanvas = await html2canvas(globeEl, {
+                useCORS: true, allowTaint: true,
+                backgroundColor: null,
+                width: globeEl.offsetWidth, height: globeEl.offsetHeight,
+                scale,
+                logging: false,
+                ignoreElements: el => el.id === 'globe-arc-overlay'
             });
-            cy += SEC_GAP;
-        }
 
-        // DXCC section
-        if (inclDXCC && dxccSorted.length) {
-            drawHeading('Countries Worked');
-            const dMax = dxccSorted[0][1];
-            dxccSorted.forEach(([country, cnt]) => {
-                const short = country.length > 18 ? country.slice(0, 16) + '…' : country;
-                drawBar(short, cnt, dMax, cAcc);
+            // Restore camera if we moved it
+            if (!cameraView) globeInstance.pointOfView(savedPov, 0);
+
+            // Measure legend height
+            let legendH = PAD;
+            if (inclCallsign) legendH += HEAD + LINE + (grid ? LINE : 0) + GAP;
+            if (inclStats)    legendH += HEAD + LINE * 4 + GAP;
+            if (inclBands && bandsSorted.length)  legendH += HEAD + bandsSorted.length * LINE + GAP;
+            if (inclDXCC  && dxccSorted.length)   legendH += HEAD + dxccSorted.length  * LINE + GAP;
+            if (inclModes && modesSorted.length)  legendH += HEAD + modesSorted.length * LINE + GAP;
+            legendH += PAD;
+
+            const outW = mapW + PW * scale;
+            const outH = Math.max(mapH, legendH * scale);
+            const out  = document.createElement('canvas');
+            out.width  = outW;
+            out.height = outH;
+            const ctx  = out.getContext('2d');
+
+            // Globe (WebGL) + dots layer
+            ctx.fillStyle = cBg;
+            ctx.fillRect(0, 0, outW, outH);
+            ctx.drawImage(glCanvas, 0, 0, mapW, mapH);
+            ctx.drawImage(dotsCanvas, 0, 0, mapW, mapH);
+
+            // Legend panel — same as 2D
+            ctx.fillStyle = cSurf;
+            ctx.fillRect(mapW, 0, PW * scale, outH);
+            ctx.strokeStyle = cBrd; ctx.lineWidth = scale;
+            ctx.beginPath(); ctx.moveTo(mapW, 0); ctx.lineTo(mapW, outH); ctx.stroke();
+
+            ctx.save();
+            ctx.scale(scale, scale);
+            drawLegend(ctx, mapW / scale, outH / scale);
+            ctx.restore();
+
+            status.textContent = 'Saving…';
+            download(out);
+
+        } else {
+            // ════════════════════════════════════════════════════════════════
+            // 2D MAP MODE — side legend panel
+            // ════════════════════════════════════════════════════════════════
+
+            if (!cameraView) {
+                mapEngine.fitBounds();
+                await new Promise(r => setTimeout(r, 600));
+            }
+
+            status.textContent = 'Capturing map…';
+            const mapEl = document.getElementById('map');
+            const mapCanvas = await html2canvas(mapEl, {
+                useCORS: true, allowTaint: true,
+                backgroundColor: cBg,
+                width: mapEl.offsetWidth, height: mapEl.offsetHeight,
+                scale,
+                logging: false
             });
-            cy += SEC_GAP;
+
+            const mapW = mapCanvas.width;
+            const mapH = mapCanvas.height;
+
+            let legendH = PAD;
+            if (inclCallsign) legendH += HEAD + LINE + (grid ? LINE : 0) + GAP;
+            if (inclStats)    legendH += HEAD + LINE * 4 + GAP;
+            if (inclBands && bandsSorted.length)  legendH += HEAD + bandsSorted.length * LINE + GAP;
+            if (inclDXCC  && dxccSorted.length)   legendH += HEAD + dxccSorted.length  * LINE + GAP;
+            if (inclModes && modesSorted.length)  legendH += HEAD + modesSorted.length * LINE + GAP;
+            legendH += PAD;
+
+            const outW = mapW + PW * scale;
+            const outH = Math.max(mapH, legendH * scale);
+            const out  = document.createElement('canvas');
+            out.width  = outW;
+            out.height = outH;
+            const ctx  = out.getContext('2d');
+
+            ctx.fillStyle = cBg;
+            ctx.fillRect(0, 0, outW, outH);
+            ctx.drawImage(mapCanvas, 0, 0, mapW, mapH);
+
+            ctx.fillStyle = cSurf;
+            ctx.fillRect(mapW, 0, PW * scale, outH);
+            ctx.strokeStyle = cBrd; ctx.lineWidth = scale;
+            ctx.beginPath(); ctx.moveTo(mapW, 0); ctx.lineTo(mapW, outH); ctx.stroke();
+
+            ctx.save();
+            ctx.scale(scale, scale);
+            drawLegend(ctx, mapW / scale, outH / scale);
+            ctx.restore();
+
+            status.textContent = 'Saving…';
+            download(out);
         }
-
-        // Modes section
-        if (inclModes && modesSorted.length) {
-            drawHeading('Modes');
-            const mMax = modesSorted[0][1];
-            modesSorted.forEach(([mode, cnt]) => {
-                drawBar(mode, cnt, mMax, '#a78bfa');
-            });
-            cy += SEC_GAP;
-        }
-
-        // Branding watermark
-        ctx.font = `400 8px "JetBrains Mono", monospace`;
-        ctx.fillStyle = cMuted + '88';
-        ctx.fillText('Polarlog', lxL + PAD, outH / scale - 8);
-
-        ctx.restore();
-
-        // ── 5. Download PNG ────────────────────────────────────────────────
-        status.textContent = 'Saving…';
-        const link = document.createElement('a');
-        link.download = `polarlog-${call}-${new Date().toISOString().slice(0,10)}.png`;
-        link.href = out.toDataURL('image/png');
-        link.click();
 
         modal.style.display = 'none';
     } catch (err) {
         console.error('Screenshot failed:', err);
         status.textContent = 'Export failed: ' + err.message;
     } finally {
-        capture.disabled = false;
+        if (btnFull) btnFull.disabled = false;
+        if (btnCam)  btnCam.disabled  = false;
     }
 }
 

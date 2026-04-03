@@ -61,6 +61,113 @@ export class QRZService {
     }
   }
 
+  /**
+   * Fetch the user's QRZ logbook as ADIF and return a callsign→location map.
+   * Uses the QRZ Logbook API (logbook.qrz.com/api).
+   * The logbook API key is the same key used for XML access.
+   * Returns: Map<string, { lat, lon, grid, country, dxcc }>
+   */
+  async fetchLogbook() {
+    const key = this.apiKey || this.sessionKey;
+    if (!key) throw new Error('No API key for logbook fetch');
+
+    const body = new URLSearchParams({ KEY: key, ACTION: 'FETCH', OPTION: 'TYPE:ADIF' });
+    const fetchOpts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    };
+
+    // QRZ does not send CORS headers — must use proxy. Try proxy first, direct as last resort.
+    const urls = [];
+    if (this.proxyUrl) urls.push(`${this.proxyUrl}https://logbook.qrz.com/api`);
+    urls.push('https://logbook.qrz.com/api');
+
+    let raw = null;
+    let lastErr = null;
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, fetchOpts);
+        const text = await response.text();
+        // cors-anywhere demo-wall detection
+        if (text.includes('corsdemo') || text.includes('This API enables cross-origin')) continue;
+        raw = text;
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (raw === null) throw new Error(lastErr?.message || 'All fetch attempts failed');
+
+    // Response is URL-encoded: RESULT=OK&COUNT=n&ADIF=<adif content>
+    const adifIdx = raw.indexOf('ADIF=');
+    if (adifIdx === -1) {
+      const resultMatch = raw.match(/RESULT=([^&]+)/);
+      const result = resultMatch ? decodeURIComponent(resultMatch[1]) : raw.slice(0, 120);
+      throw new Error(`QRZ Logbook: ${result}`);
+    }
+
+    const adifRaw = decodeURIComponent(raw.substring(adifIdx + 5));
+
+    // Parse the ADIF inline (same logic as adif-worker.js)
+    const eohIdx = adifRaw.toUpperCase().indexOf('<EOH>');
+    const dataPart = eohIdx !== -1 ? adifRaw.substring(eohIdx + 5) : adifRaw;
+    const records = dataPart.split(/<EOR>/i);
+
+    const locationMap = new Map(); // call → { lat, lon, grid, country, dxcc }
+
+    for (const record of records) {
+      if (!record.trim()) continue;
+      const qso = {};
+      const regex = /<([^:>]+):(\d+)(?::[^>]+)?>([^<]*)/gi;
+      let match;
+      while ((match = regex.exec(record)) !== null) {
+        const tag = match[1].toUpperCase();
+        const len = parseInt(match[2]);
+        qso[tag] = match[3].substring(0, len).trim();
+      }
+
+      const call = qso.CALL;
+      if (!call) continue;
+
+      // Decode ADIF WRL-style coordinates if present
+      const decodeCoord = (s) => {
+        if (!s) return null;
+        const dir = s.charAt(0).toUpperCase();
+        if (!['N','S','E','W'].includes(dir)) { const v = parseFloat(s); return isNaN(v) ? null : v; }
+        const parts = s.substring(1).trim().split(' ');
+        let dec = parts.length >= 2 ? parseFloat(parts[0]) + parseFloat(parts[1]) / 60 : parseFloat(s.substring(1));
+        return (dir === 'S' || dir === 'W') ? -dec : dec;
+      };
+
+      let lat = decodeCoord(qso.LAT);
+      let lon = decodeCoord(qso.LON);
+
+      // Fall back to grid square
+      if ((lat == null || lon == null) && qso.GRIDSQUARE && qso.GRIDSQUARE.length >= 4) {
+        const g = qso.GRIDSQUARE.toUpperCase();
+        lon = (g.charCodeAt(0) - 65) * 20 - 180 + parseInt(g[2]) * 2 + (g.length >= 6 ? (g.charCodeAt(4) - 65) * (2/24) + (1/24) : 1);
+        lat = (g.charCodeAt(1) - 65) * 10 - 90  + parseInt(g[3]) + (g.length >= 6 ? (g.charCodeAt(5) - 65) * (1/24) + (0.5/24) : 0.5);
+      }
+
+      if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) continue;
+
+      // Keep the best entry per callsign — prefer entries with a grid square
+      const existing = locationMap.get(call);
+      if (!existing || (!existing.grid && qso.GRIDSQUARE)) {
+        locationMap.set(call, {
+          lat: String(lat),
+          lon: String(lon),
+          grid: qso.GRIDSQUARE || existing?.grid || null,
+          country: qso.COUNTRY || qso.DXCC_COUNTRY || existing?.country || null,
+          dxcc: qso.DXCC || existing?.dxcc || null
+        });
+      }
+    }
+
+    return locationMap;
+  }
+
   async login() {
     // If we have a direct key, we skip login and try it in lookup.
     // If we've reached here, it means the key failed or we don't have one.
