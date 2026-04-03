@@ -915,10 +915,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             btn.textContent = 'INITIALIZING...';
             const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.GRIDSQUARE);
             const user = document.getElementById('qrz-user').value, pass = document.getElementById('qrz-pass').value, key = document.getElementById('qrz-key').value, proxy = document.getElementById('cors-proxy').value;
-            if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING'; return alert('Credentials Required.'); }
+            if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; return alert('Credentials Required.'); }
             if (!forceAll && missing.length === 0) {
                 if (window.confirm('All contacts resolved. Force refresh?')) return bulkResolveQSOs(true);
-                btn.disabled = false; btn.textContent = 'RESOLVE MISSING'; return;
+                btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; return;
             }
             isResolving = true;
             btn.textContent = 'RESOLVING...';
@@ -987,7 +987,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
             }
 
-            isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false, true); btn.disabled = false; btn.textContent = 'RESOLVE MISSING';
+            isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false, true); btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA';
         }
 
         // ── QRZ ADIF cross-reference (CORS-free) ────────────────────────
