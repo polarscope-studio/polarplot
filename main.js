@@ -1214,6 +1214,44 @@ function finalizeParsedData(data) {
 
 // ─── Screenshot Export ───────────────────────────────────────────────────────
 
+const _CTRY_ABBR = {
+    'England':'ENG','Scotland':'SCO','Wales':'WAL','Northern Ireland':'NIR','United Kingdom':'UK',
+    'United States':'USA','United States Of America':'USA','Canada':'CAN','Mexico':'MEX',
+    'Fed. Rep. of Germany':'GER','Germany':'GER','France':'FRA','Italy':'ITA','Spain':'ESP',
+    'Portugal':'POR','Netherlands':'NLD','Belgium':'BEL','Switzerland':'SUI','Austria':'AUT',
+    'Denmark':'DEN','Norway':'NOR','Sweden':'SWE','Finland':'FIN','Iceland':'ISL',
+    'Ireland':'IRL','Luxembourg':'LUX',
+    'Poland':'POL','Czech Republic':'CZE','Slovak Republic':'SVK','Hungary':'HUN',
+    'Romania':'ROM','Bulgaria':'BGR','Greece':'GRE','Serbia':'SRB','Croatia':'HRV',
+    'Slovenia':'SVN','Bosnia':'BIH','Montenegro':'MNE','Albania':'ALB','Kosovo':'KOS',
+    'Latvia':'LVA','Lithuania':'LTU','Estonia':'EST','Ukraine':'UKR','Belarus':'BLR',
+    'Moldova':'MDA','Georgia':'GEO','Armenia':'ARM','Azerbaijan':'AZE',
+    'European Russia':'RUS','Asiatic Russia':'RUS','Russia':'RUS',
+    'Kazakhstan':'KAZ','Uzbekistan':'UZB','Kyrgyzstan':'KGZ','Tajikistan':'TJK','Turkmenistan':'TKM',
+    'Turkey':'TUR','Israel':'ISR','Saudi Arabia':'SAU','United Arab Emirates':'UAE',
+    'Iraq':'IRQ','Iran':'IRN','Syria':'SYR','Jordan':'JOR','Lebanon':'LBN',
+    'Kuwait':'KWT','Qatar':'QAT','Oman':'OMN','Yemen':'YEM','Afghanistan':'AFG',
+    'Pakistan':'PAK','India':'IND','Bangladesh':'BGD','Sri Lanka':'LKA',
+    'China':'CHN','Japan':'JPN','South Korea':'KOR','Republic of Korea':'KOR',
+    'Taiwan':'TWN','Mongolia':'MNG','Vietnam':'VNM','Thailand':'THA',
+    'Malaysia':'MYS','Indonesia':'IDN','Philippines':'PHL','Singapore':'SGP',
+    'Australia':'AUS','New Zealand':'NZL','Papua New Guinea':'PNG','Fiji':'FJI',
+    'Brazil':'BRA','Argentina':'ARG','Chile':'CHL','Colombia':'COL','Peru':'PER',
+    'Venezuela':'VEN','Ecuador':'ECU','Bolivia':'BOL','Paraguay':'PRY','Uruguay':'URY',
+    'Cuba':'CUB','Jamaica':'JAM','Puerto Rico':'PRI','Dominican Republic':'DOM',
+    'Egypt':'EGY','Morocco':'MAR','Algeria':'DZA','Tunisia':'TUN','Libya':'LBY',
+    'Nigeria':'NGA','South Africa':'SAF','Kenya':'KEN','Ethiopia':'ETH','Ghana':'GHA',
+};
+function _ctryAbbr(name) {
+    if (!name) return '???';
+    const u = name.toUpperCase();
+    for (const [k, v] of Object.entries(_CTRY_ABBR)) {
+        if (k.toUpperCase() === u) return v;
+    }
+    // Fallback: first 3 non-space chars
+    return name.replace(/\s+/g, '').slice(0, 3).toUpperCase();
+}
+
 async function takeScreenshot(cameraView = false) {
     const modal  = document.getElementById('screenshot-modal');
     const status = document.getElementById('ss-status');
@@ -1349,7 +1387,7 @@ async function takeScreenshot(cameraView = false) {
                         ctx.drawImage(flagImg, lxL + PAD, cy + 2, FW, FH);
                         ctx.restore();
                         const nameX = lxL + PAD + FW + 4;
-                        const nameLabel = c.length > 9 ? c.slice(0, 8) + '…' : c;
+                        const nameLabel = _ctryAbbr(c);
                         ctx.font = `400 9px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted;
                         ctx.fillText(nameLabel, nameX, cy + 10);
                         const bx = lxL + PAD + FW + 4 + 48, bmw = PW - PAD * 2 - FW - 4 - 48 - 28;
@@ -1363,7 +1401,7 @@ async function takeScreenshot(cameraView = false) {
                         ctx.fillText(String(n), lxL + PW - PAD - vw, cy + 10);
                         cy += LINE;
                     } else {
-                        drawBar(c.length > 18 ? c.slice(0,16)+'…' : c, n, dMax, cAcc);
+                        drawBar(_ctryAbbr(c), n, dMax, cAcc);
                     }
                 });
                 cy += GAP;
@@ -1376,7 +1414,7 @@ async function takeScreenshot(cameraView = false) {
             }
 
             ctx.font = `400 8px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted + '88';
-            ctx.fillText('polarplot.net', lxL + PAD, outH - 8);
+            ctx.fillText('polarplot.net', PAD, outH - 8);
         };
 
         const download = (canvas) => {
@@ -1409,8 +1447,10 @@ async function takeScreenshot(cameraView = false) {
             globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
             const glCanvas = globeInstance.renderer().domElement;
 
-            const mapW = glCanvas.width;
-            const mapH = glCanvas.height;
+            // WebGL renderer runs at pixelRatio=1 (CSS pixels), so scale up to
+            // match html2canvas HiDPI output — gives the legend the same height as 2D
+            const mapW = glCanvas.width  * scale;
+            const mapH = glCanvas.height * scale;
 
             status.textContent = 'Capturing dots…';
             const dotsCanvas = await html2canvas(globeEl, {
@@ -1426,7 +1466,6 @@ async function takeScreenshot(cameraView = false) {
             if (!cameraView) globeInstance.pointOfView(savedPov, 0);
             document.body.removeChild(_veil);
 
-            // outH = mapH so legend panel never extends beyond the globe frame
             const outW = mapW + PW * scale;
             const outH = mapH;
             const out  = document.createElement('canvas');
@@ -1434,7 +1473,7 @@ async function takeScreenshot(cameraView = false) {
             out.height = outH;
             const ctx  = out.getContext('2d');
 
-            // Globe (WebGL cropped) + dots layer
+            // Globe (WebGL stretched to HiDPI size) + dots layer
             ctx.fillStyle = cBg;
             ctx.fillRect(0, 0, outW, outH);
             ctx.drawImage(glCanvas, 0, 0, mapW, mapH);
