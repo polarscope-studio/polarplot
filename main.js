@@ -5,7 +5,6 @@ import { QRZService } from './src/qrz-service.js';
 let mapEngine;
 let worker;
 let currentQSOs = [];
-let confirmedCalls = null; // Set<string> of confirmed callsigns from QRZ, null = not fetched yet
 let searchQuery = '';
 let selectedDXCC = '';
 let isResolving = false;
@@ -955,21 +954,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await new Promise(r => setTimeout(r, 600));
             }
 
-            // ── Phase 2: Fetch QSL confirmed status independently ──────────
-            console.log('[Phase 2] starting, apiKey:', !!qrz.apiKey, 'sessionKey:', !!qrz.sessionKey);
-            try {
-                stats.textContent = 'Fetching QSL confirmation status...';
-                console.log('[Phase 2] calling fetchConfirmedCalls...');
-                confirmedCalls = await qrz.fetchConfirmedCalls();
-                stats.textContent = `QSL confirmed: ${confirmedCalls.size} contacts`;
-                processQSOs(currentQSOs, false);
-                await new Promise(r => setTimeout(r, 400));
-            } catch (e) {
-                confirmedCalls = null; // null = status unavailable (not fetched/failed)
-                console.error('[QRZ confirmed] FAILED:', e.message, e);
-                stats.textContent = `QSL status unavailable (${e.message.slice(0,60)})`;
-                await new Promise(r => setTimeout(r, 1200));
-            }
 
             // ── Phase 3: XML lookup for remaining unresolved contacts ───────
             const stillMissing = missing.filter(q => !q.LAT || !q.LON);
@@ -2078,12 +2062,6 @@ function showGlobePopup(point, clientX, clientY) {
         const bandColor = BAND_COLORS[band] || 'var(--acc)';
         const iso     = DXCC_MAP[(country).toUpperCase()] || getISOFromCallsign(call);
         const flagHtml = iso ? buildFlagImg(iso, country, 40, 'width:100%;height:100%;object-fit:cover;border-radius:2px;') : '📡';
-        const isConf = confirmedCalls === null ? undefined : confirmedCalls.has(call.toUpperCase());
-        const confHtml = isConf === true
-            ? `<div style="display:flex;align-items:center;gap:5px;padding:6px 14px 2px;"><span style="color:#22c55e;font-size:0.85rem;font-weight:700;">✓</span><span style="color:#22c55e;font-size:0.7rem;font-family:var(--font-mono);">Confirmed</span></div>`
-            : isConf === false
-            ? `<div style="display:flex;align-items:center;gap:5px;padding:6px 14px 2px;"><span style="color:#ef4444;font-size:0.85rem;font-weight:700;">✗</span><span style="color:#ef4444;font-size:0.7rem;font-family:var(--font-mono);">Unconfirmed</span></div>`
-            : `<div style="padding:6px 14px 2px;"><span style="color:#64748b;font-size:0.68rem;font-family:var(--font-mono);">― QSL status unavailable</span></div>`;
 
         let distStr = '';
         if (hLat && hLon && qso.LAT && qso.LON)
@@ -2111,7 +2089,6 @@ function showGlobePopup(point, clientX, clientY) {
             ${lastDate ? `<div class="globe-popup-row"><span>Last QSO</span><span class="globe-popup-val">${lastDate}${lastTime}</span></div>` : ''}
             <div class="globe-popup-row"><span>QSOs</span><span class="globe-popup-val" style="color:${bandColor};font-weight:700;">${qsoHistory.length}</span></div>
           </div>
-          ${confHtml}
           <div style="padding:4px 14px 12px;">
             <button class="globe-popup-hist-btn" style="width:100%;padding:7px;background:color-mix(in srgb,${bandColor},transparent 88%);border:1px solid ${bandColor};color:${bandColor};border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">📜 Show All QSOs</button>
           </div>`;
@@ -2425,8 +2402,7 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
                 || getISOFromCoords(parseFloat(latest.LAT), parseFloat(latest.LON));
             const cName = latest.COUNTRY || latest.DXCC || ISO_TO_NAME[iso] || 'Unknown Station';
             const flagHtml = iso ? buildFlagImg(iso, cName, 160, 'width:100%;height:100%;object-fit:cover;border-radius:2px;', "this.onerror=null;this.src='';this.parentElement.innerHTML='📡';") : '📡';
-            const confirmed = confirmedCalls === null ? undefined : confirmedCalls.has(latest.CALL?.toUpperCase());
-            mapEngine.plotQSO(history, BAND_COLORS[latest.BAND?.toUpperCase()] || '#38bdf8', { tactical: { dist: distStr, flagHtml, name: cName, confirmed } });
+            mapEngine.plotQSO(history, BAND_COLORS[latest.BAND?.toUpperCase()] || '#38bdf8', { tactical: { dist: distStr, flagHtml, name: cName } });
         }
     });
     if (shouldFitBounds) mapEngine.fitBounds();
