@@ -275,6 +275,9 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 }
 .map-ctrl-group.top-right { top: 10px; right: 10px; }
 .map-ctrl-group.bottom-right { bottom: 30px; right: 10px; }
+.map-ctrl-group.top-left { top: 10px; left: calc(var(--sidebar-width) + 10px); flex-direction: row; }
+.map-ctrl-group.top-left .map-ctrl-btn { border-bottom: none; border-right: 1px solid var(--brd); width: 32px; font-size: 0.68rem; letter-spacing: 0.04em; }
+.map-ctrl-group.top-left .map-ctrl-btn:last-child { border-right: none; }
 
 .map-ctrl-btn {
   display: flex;

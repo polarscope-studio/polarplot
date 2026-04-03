@@ -203,6 +203,7 @@
         box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px color-mix(in srgb, var(--acc), transparent 94%);
         font-family: 'DM Sans', sans-serif;
         pointer-events: auto;
+        transition: opacity 0.25s ease;
       }
       .globe-popup-header {
         display: flex; align-items: center; gap: 10px;
@@ -694,13 +695,6 @@
             </label>
           </div>
 
-          <div class="field-group" style="flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 1.5rem;">
-            <label style="margin-bottom: 0; color: var(--text);">Distance Units</label>
-            <div class="mode-tabs" style="width: auto; margin-bottom: 0;">
-                <button id="unit-km" class="active">KM</button>
-                <button id="unit-mi">MI</button>
-            </div>
-          </div>
         </section>
 
         <section class="controls-section search-hub">
@@ -833,6 +827,12 @@
 
       <!-- Universal Map UI Overlay (Persistent 2D/3D Controls) -->
       <div class="map-ui-overlay">
+        <!-- Top Left: Distance Units -->
+        <div class="map-ctrl-group top-left">
+          <button id="unit-km" class="map-ctrl-btn active" title="Kilometres">KM</button>
+          <button id="unit-mi" class="map-ctrl-btn" title="Miles">MI</button>
+        </div>
+
         <!-- Top Right: Overlays & Globe Toggle -->
         <div class="map-ctrl-group top-right">
           <button id="ui-btn-layer" class="map-ctrl-btn" title="Map Overlays">

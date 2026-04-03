@@ -748,6 +748,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 localStorage.setItem('polarlog_active_bands', JSON.stringify([...activeBands]));
                 processQSOs(currentQSOs, false);
+                if (globeVisible && globeInstance) updateGlobeData();
             });
         });
 
@@ -889,8 +890,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (btn) btn.onclick = () => { const data = e.popup._source.options?.stationData; if (data) showHistoryPanel(data); };
         });
 
-        document.getElementById('search-call')?.addEventListener('input', (e) => { searchQuery = e.target.value.toUpperCase(); processQSOs(currentQSOs, false); });
-        document.getElementById('filter-dxcc')?.addEventListener('change', (e) => { selectedDXCC = e.target.value; processQSOs(currentQSOs, false); });
+        document.getElementById('search-call')?.addEventListener('input', (e) => { searchQuery = e.target.value.toUpperCase(); processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
+        document.getElementById('filter-dxcc')?.addEventListener('change', (e) => { selectedDXCC = e.target.value; processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
         document.getElementById('close-history')?.addEventListener('click', () => document.getElementById('history-panel').classList.remove('visible'));
         document.getElementById('close-station')?.addEventListener('click', () => document.getElementById('station-panel').classList.remove('visible'));
 
@@ -1194,6 +1195,17 @@ function initGlobe(el) {
             const cell = alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : alt > 0.15 ? 0.5 : 0;
             if (cell !== _lastCellDeg) { _lastCellDeg = cell; updateGlobeDots(); }
         }, 200);
+
+        // Fade out popup when its contact rotates behind the globe
+        if (_globePopupGeoPoint) {
+            const popup = document.getElementById('globe-popup');
+            if (popup && popup.style.display !== 'none') {
+                if (!_isGlobePointVisible(_globePopupGeoPoint.lat, _globePopupGeoPoint.lng)) {
+                    popup.style.opacity = '0';
+                    setTimeout(() => { hideGlobePopup(); }, 260);
+                }
+            }
+        }
     });
 
     // ── GL-based Point Interactions ──────────────────────────────────────────
@@ -1259,6 +1271,7 @@ function buildGlobeDots(contactList, cellDeg = 4) {
 let _globeContactList = [];
 let _globeHLat = 0, _globeHLon = 0, _globeHasHome = false;
 let _globePopupTs = 0;
+let _globePopupGeoPoint = null; // { lat, lng } of currently open popup contact
 
 function _rebuildGlobeContacts() {
     const homeLoc = mapEngine?.homeLocation;
@@ -1268,6 +1281,9 @@ function _rebuildGlobeContacts() {
     const contacts = {};
     currentQSOs.forEach(q => {
         if (!q.LAT || !q.LON) return;
+        if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return;
+        if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
+        if (!activeBands.has(q.BAND?.toUpperCase())) return;
         if (!contacts[q.CALL]) contacts[q.CALL] = {
             lat: parseFloat(q.LAT), lng: parseFloat(q.LON),
             call: q.CALL, country: q.COUNTRY || q.DXCC || '',
@@ -1284,8 +1300,9 @@ function updateGlobeDots() {
     if (!globeInstance || !_globeContactList.length) return;
 
     const alt = globeInstance.pointOfView().altitude;
-    const cellDeg = alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : alt > 0.15 ? 0.5 : 0;
-    const clusteringOn = document.getElementById('chk-clusters')?.checked ?? true;
+    const isFiltered = !!(searchQuery || selectedDXCC);
+    const cellDeg = isFiltered ? 0 : (alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : alt > 0.15 ? 0.5 : 0);
+    const clusteringOn = !isFiltered && (document.getElementById('chk-clusters')?.checked ?? true);
 
     const rawContacts = _globeContactList.map(c => ({
         lat: c.lat, lng: c.lng, color: BAND_COLORS[c.band] || '#38bdf8',
@@ -1448,6 +1465,8 @@ function showGlobePopup(point, clientX, clientY) {
     }
 
     _globePopupTs = Date.now();
+    _globePopupGeoPoint = { lat: point.lat, lng: point.lng };
+    popup.style.opacity = '1';
     popup.style.display = 'block';
     popup.style.zIndex  = '2147483647'; // Force on top
     
@@ -1467,6 +1486,19 @@ function showGlobePopup(point, clientX, clientY) {
 function hideGlobePopup() {
     const popup = document.getElementById('globe-popup');
     if (popup) popup.style.display = 'none';
+    _globePopupGeoPoint = null;
+}
+
+// Returns true if the lat/lng point is on the visible hemisphere facing the camera
+function _isGlobePointVisible(lat, lng) {
+    if (!globeInstance) return true;
+    const phi   = (90 - lat) * Math.PI / 180;
+    const theta = (lng + 180) * Math.PI / 180;
+    const px = -Math.sin(phi) * Math.cos(theta);
+    const py =  Math.cos(phi);
+    const pz =  Math.sin(phi) * Math.sin(theta);
+    const cam = globeInstance.camera().position;
+    return (px * cam.x + py * cam.y + pz * cam.z) > 0;
 }
 
 // ─── Tactical Advisory ───────────────────────────────────────────────────────
