@@ -4,12 +4,12 @@
 
 Polarplot is a browser-based ADIF log visualizer for amateur radio operators. Drop in your log file, set your home location, and watch every QSO you've ever made render as an interactive dot on a world map — or a spinning 3D globe. Filter by band, drill into contact history, resolve missing coordinates from QRZ, and export a screenshot worth framing.
 
-Live at **[polarplot.net](https://polarplot.net)**
+Live at **[https://polarplot.net](https://polarplot.net)**
 
 ---
 
 ## Features
-
+  
 ### 📂 Log Import
 - Drag-and-drop or file-select any standard **ADIF** file (`.adi`, `.adif`)
 - Parses in a **dedicated Web Worker** — the UI never freezes, even on logs with thousands of QSOs
@@ -18,12 +18,14 @@ Live at **[polarplot.net](https://polarplot.net)**
 - Optional **QRZ Logbook** import — pull your entire online logbook directly via the QRZ API
 
 ### 🗺️ 2D Map
+  
 - **Interactive Leaflet map** with five switchable base layers:
   - Dark Matter (CartoDB) — clean tactical dark theme
   - Arctic White (CartoDB) — high contrast light theme
   - Open Streets (OpenStreetMap)
   - **Satellite** — Esri ArcGIS World Imagery (Maxar/Airbus composite)
   - **Topographic** — Esri ArcGIS World Topo
+    
 - **Marker clustering** — thousands of contacts render instantly; clusters drill down on click
 - Toggle between clustered and standalone (canvas-accelerated) marker modes
 - **Great circle paths** — geodesic lines from your home QTH to every contact, rendered once and cached (no re-render on zoom or filter changes)
@@ -32,6 +34,7 @@ Live at **[polarplot.net](https://polarplot.net)**
 - `preferCanvas: true` for hardware-accelerated marker rendering
 
 ### 🌍 3D Globe
+  
 - Powered by **Globe.gl** (Three.js WebGL)
 - Switch between **Day** (Blue Marble NASA texture) and **Night** (city lights texture) views
 - **Contact arcs** — animated geodesic lines flying from your QTH to every worked station
@@ -40,12 +43,14 @@ Live at **[polarplot.net](https://polarplot.net)**
 - Click any contact dot or arc for the full station popup
 
 ### 📋 Contact Cards & Popups
+  
 - Every callsign is a **clickable QRZ hyperlink** — one click opens the station's QRZ page in a new tab
 - Shows: callsign, country + flag, band, mode, grid square, last QSO date/time, total QSO count
 - **Full QSO history** panel — see every individual contact with that station, sorted by date
 - Popups work identically in 2D map view, 3D globe view, and the stats panel
 
 ### 📡 Band Filtering
+  
 - Per-band toggle chips for every amateur band (160m → 70cm and beyond)
 - Each band has a unique accent color carried through markers, paths, arcs, and popups
 - Band filter state persists across sessions via localStorage
@@ -57,22 +62,26 @@ Live at **[polarplot.net](https://polarplot.net)**
 - Country names resolved from callsign prefix when not present in the log (covers WSJTX-style logs)
 
 ### 🔍 QRZ Integration
+  
 - **RESOLVE MISSING / LOCATION DATA** — for contacts where your ADIF has no coordinates or grid square, Polarplot batch-queries QRZ to fill in lat/lon and country
 - Falls back gracefully: QRZ lat/lon → grid square decode → skips if still unresolvable
 - Session key caching — logs in once, reuses the session key for the entire batch
 - CORS proxy support for environments that need it
 
 ### 📍 Location Input
+  
 - Set home QTH by **Maidenhead grid square** or **manual lat/lon**
 - Auto-resolves your own callsign via QRZ to pre-fill home coordinates
 - Home location persists in localStorage
 
 ### 🎨 Themes & Customization
+  
 - Multiple UI color themes selectable from the settings panel
 - Accent color propagates to markers, paths, arcs, cluster icons, and popup highlights
 - All preferences (theme, bands, units, map layer, clusters, paths) persist in localStorage
 
 ### 📸 Screenshot Export
+  
 - Capture the current 2D map **or** 3D globe as a PNG
 - Globe animation is paused and locked before capture — no motion blur or drift
 - Options: full current view, or snap globe to your home QTH before capture
