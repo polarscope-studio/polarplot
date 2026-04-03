@@ -117,7 +117,7 @@ export class MapEngine {
     const _months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const _fd      = raw => (!raw || raw.length < 8) ? null
         : `${raw.slice(6,8)}-${_months[+raw.slice(4,6)-1]||'?'}-${raw.slice(0,4)}`;
-    const _ft      = raw => (!raw || raw.length < 4) ? '' : ` ${raw.slice(0,2)}:${raw.slice(2,4)}z`;
+    const _ft      = raw => (!raw || raw.length < 4) ? '' : ` ${raw.slice(0,2)}:${raw.slice(2,4)}`;
     const lastDate = _fd(latest.QSO_DATE);
     const lastTime = lastDate ? _ft(latest.TIME_ON) : '';
 

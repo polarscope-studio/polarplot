@@ -2075,7 +2075,7 @@ function showGlobePopup(point, clientX, clientY) {
 
         const formatDate = raw => (!raw || raw.length < 8) ? null
             : `${raw.slice(6,8)}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][+raw.slice(4,6)-1]||'?'}-${raw.slice(0,4)}`;
-        const formatTime = raw => (!raw || raw.length < 4) ? '' : ` ${raw.slice(0,2)}:${raw.slice(2,4)}z`;
+        const formatTime = raw => (!raw || raw.length < 4) ? '' : ` ${raw.slice(0,2)}:${raw.slice(2,4)}`;
         const lastDate = formatDate(qso.QSO_DATE);
         const lastTime = lastDate ? formatTime(qso.TIME_ON) : '';
 
@@ -2252,7 +2252,7 @@ function renderTotalPanel(container) {
 
     const formatDate = raw => (!raw || raw.length < 8) ? '--'
         : `${raw.slice(6,8)}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][+raw.slice(4,6)-1]||'?'}-${raw.slice(0,4)}`;
-    const formatTime = raw => (!raw || raw.length < 4) ? '' : `${raw.slice(0,2)}:${raw.slice(2,4)}z`;
+    const formatTime = raw => (!raw || raw.length < 4) ? '' : `${raw.slice(0,2)}:${raw.slice(2,4)}`;
 
     const rows = data.map(s => {
         const iso = (DXCC_MAP[(s.country || '').toUpperCase()] || getISOFromCallsign(s.call) || '').toLowerCase();
