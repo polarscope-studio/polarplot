@@ -1287,21 +1287,22 @@ async function takeScreenshot(cameraView = false) {
             // GLOBE MODE — WebGL + HTML dots, side legend panel same as 2D
             // ════════════════════════════════════════════════════════════════
 
-            // For full-map view, temporarily zoom out to show the whole globe
             const savedPov = globeInstance.pointOfView();
             if (!cameraView) {
-                globeInstance.pointOfView({ lat: savedPov.lat, lng: savedPov.lng, altitude: 2.5 });
-                await new Promise(r => setTimeout(r, 120)); // let Three.js update camera
+                globeInstance.pointOfView({ lat: 20, lng: 0, altitude: 2.5 });
+                await new Promise(r => setTimeout(r, 200));
+                globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
             }
 
             status.textContent = 'Capturing globe…';
             globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
             const glCanvas = globeInstance.renderer().domElement;
+            const globeEl  = document.getElementById('globe-container');
+
             const mapW = glCanvas.width;
             const mapH = glCanvas.height;
 
             status.textContent = 'Capturing dots…';
-            const globeEl = document.getElementById('globe-container');
             const dotsCanvas = await html2canvas(globeEl, {
                 useCORS: true, allowTaint: true,
                 backgroundColor: null,
@@ -1314,23 +1315,15 @@ async function takeScreenshot(cameraView = false) {
             // Restore camera if we moved it
             if (!cameraView) globeInstance.pointOfView(savedPov, 0);
 
-            // Measure legend height
-            let legendH = PAD;
-            if (inclCallsign) legendH += HEAD + LINE + (grid ? LINE : 0) + GAP;
-            if (inclStats)    legendH += HEAD + LINE * 4 + GAP;
-            if (inclBands && bandsSorted.length)  legendH += HEAD + bandsSorted.length * LINE + GAP;
-            if (inclDXCC  && dxccSorted.length)   legendH += HEAD + dxccSorted.length  * LINE + GAP;
-            if (inclModes && modesSorted.length)  legendH += HEAD + modesSorted.length * LINE + GAP;
-            legendH += PAD;
-
+            // outH = mapH so legend panel never extends beyond the globe frame
             const outW = mapW + PW * scale;
-            const outH = Math.max(mapH, legendH * scale);
+            const outH = mapH;
             const out  = document.createElement('canvas');
             out.width  = outW;
             out.height = outH;
             const ctx  = out.getContext('2d');
 
-            // Globe (WebGL) + dots layer
+            // Globe (WebGL cropped) + dots layer
             ctx.fillStyle = cBg;
             ctx.fillRect(0, 0, outW, outH);
             ctx.drawImage(glCanvas, 0, 0, mapW, mapH);
@@ -1356,8 +1349,8 @@ async function takeScreenshot(cameraView = false) {
             // ════════════════════════════════════════════════════════════════
 
             if (!cameraView) {
-                mapEngine.fitBounds();
-                await new Promise(r => setTimeout(r, 600));
+                mapEngine.map.setView([20, 0], 2);
+                await new Promise(r => setTimeout(r, 900));
             }
 
             status.textContent = 'Capturing map…';
@@ -1365,7 +1358,6 @@ async function takeScreenshot(cameraView = false) {
             const mapCanvas = await html2canvas(mapEl, {
                 useCORS: true, allowTaint: true,
                 backgroundColor: cBg,
-                width: mapEl.offsetWidth, height: mapEl.offsetHeight,
                 scale,
                 logging: false
             });
@@ -1373,16 +1365,9 @@ async function takeScreenshot(cameraView = false) {
             const mapW = mapCanvas.width;
             const mapH = mapCanvas.height;
 
-            let legendH = PAD;
-            if (inclCallsign) legendH += HEAD + LINE + (grid ? LINE : 0) + GAP;
-            if (inclStats)    legendH += HEAD + LINE * 4 + GAP;
-            if (inclBands && bandsSorted.length)  legendH += HEAD + bandsSorted.length * LINE + GAP;
-            if (inclDXCC  && dxccSorted.length)   legendH += HEAD + dxccSorted.length  * LINE + GAP;
-            if (inclModes && modesSorted.length)  legendH += HEAD + modesSorted.length * LINE + GAP;
-            legendH += PAD;
-
+            // outH matches the map exactly — legend scrolls within the same height
             const outW = mapW + PW * scale;
-            const outH = Math.max(mapH, legendH * scale);
+            const outH = mapH;
             const out  = document.createElement('canvas');
             out.width  = outW;
             out.height = outH;
