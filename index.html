@@ -361,6 +361,7 @@
     <!-- JS Dependencies (Priority Loading) -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://unpkg.com/globe.gl/dist/globe.gl.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
   </head>
   <body>
     <!-- Splash Screen -->
@@ -841,6 +842,9 @@
           <button id="ui-btn-globe" class="map-ctrl-btn" title="Toggle 3D Globe">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
           </button>
+          <button id="ui-btn-screenshot" class="map-ctrl-btn" title="Export Screenshot">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          </button>
         </div>
 
         <!-- Bottom Right: Zoom Controls -->
@@ -1089,6 +1093,37 @@
         attachTooltip('pwd-info-icon', 'pwd-tooltip');
       });
     </script>
+    <!-- Screenshot Modal -->
+    <div id="screenshot-modal" style="display:none;position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+      <div style="background:var(--surf);border:1px solid color-mix(in srgb,var(--acc),transparent 60%);border-radius:14px;padding:28px;width:360px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,0.8),0 0 0 1px color-mix(in srgb,var(--acc),transparent 85%);font-family:'DM Sans',sans-serif;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          <span style="font-size:1rem;font-weight:700;color:var(--text);">Export QSO Map</span>
+        </div>
+        <p style="font-size:0.75rem;color:var(--muted);margin:0 0 18px;">Select which panels to include in the legend alongside your map.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:22px;">
+          <label class="ss-check-row"><input type="checkbox" id="ss-callsign" checked><span>Station Callsign &amp; Info</span></label>
+          <label class="ss-check-row"><input type="checkbox" id="ss-stats" checked><span>QSO Statistics</span></label>
+          <label class="ss-check-row"><input type="checkbox" id="ss-bands" checked><span>Band Breakdown</span></label>
+          <label class="ss-check-row"><input type="checkbox" id="ss-dxcc" checked><span>Top Countries Worked</span></label>
+          <label class="ss-check-row"><input type="checkbox" id="ss-modes"><span>Mode Breakdown</span></label>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button id="ss-cancel" style="flex:1;padding:9px;background:var(--surf2);border:1px solid var(--brd);color:var(--muted);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CANCEL</button>
+          <button id="ss-capture" style="flex:2;padding:9px;background:color-mix(in srgb,var(--acc),transparent 80%);border:1px solid var(--acc);color:var(--acc);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            CAPTURE PNG
+          </button>
+        </div>
+        <p id="ss-status" style="font-size:0.7rem;color:var(--muted);text-align:center;margin:12px 0 0;min-height:1em;"></p>
+      </div>
+    </div>
+    <style>
+      .ss-check-row { display:flex;align-items:center;gap:10px;cursor:pointer;padding:7px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);font-size:0.8rem;color:var(--text);transition:border-color 0.15s; }
+      .ss-check-row:hover { border-color:color-mix(in srgb,var(--acc),transparent 50%); }
+      .ss-check-row input[type=checkbox] { accent-color:var(--acc);width:14px;height:14px;flex-shrink:0; }
+    </style>
+
     <script type="module" src="/main.js"></script>
   </body>
 </html>

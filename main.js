@@ -607,6 +607,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        document.getElementById('ui-btn-screenshot')?.addEventListener('click', () => {
+            if (!currentQSOs.length) { showTacticalToast('Import a log first.', 3000); return; }
+            const modal = document.getElementById('screenshot-modal');
+            if (modal) { modal.style.display = 'flex'; }
+        });
+        document.getElementById('ss-cancel')?.addEventListener('click', () => {
+            document.getElementById('screenshot-modal').style.display = 'none';
+        });
+        document.getElementById('ss-capture')?.addEventListener('click', () => takeScreenshot());
+
         // Remove old internal map listeners
         // mapEngine.map.on('globebtnclick', toggleGlobe);
         // mapEngine.map.on('overlaybtnclick', () => { ... });
@@ -1028,6 +1038,264 @@ function finalizeParsedData(data) {
     mapEngine.fitBounds(); processQSOs(data, true); updateLoadingStatus(false);
 }
 
+// ─── Screenshot Export ───────────────────────────────────────────────────────
+
+async function takeScreenshot() {
+    const modal   = document.getElementById('screenshot-modal');
+    const status  = document.getElementById('ss-status');
+    const capture = document.getElementById('ss-capture');
+    capture.disabled = true;
+    status.textContent = 'Rendering map…';
+
+    const inclCallsign = document.getElementById('ss-callsign')?.checked;
+    const inclStats    = document.getElementById('ss-stats')?.checked;
+    const inclBands    = document.getElementById('ss-bands')?.checked;
+    const inclDXCC     = document.getElementById('ss-dxcc')?.checked;
+    const inclModes    = document.getElementById('ss-modes')?.checked;
+
+    try {
+        // Grab CSS variable values from root for canvas drawing
+        const rootStyle = getComputedStyle(document.documentElement);
+        const cBg   = rootStyle.getPropertyValue('--bg').trim()   || '#080b12';
+        const cSurf = rootStyle.getPropertyValue('--surf').trim() || '#0f1624';
+        const cAcc  = rootStyle.getPropertyValue('--acc').trim()  || '#38bdf8';
+        const cText = rootStyle.getPropertyValue('--text').trim() || '#e2e8f0';
+        const cMuted= rootStyle.getPropertyValue('--muted').trim()|| '#64748b';
+        const cBrd  = rootStyle.getPropertyValue('--brd').trim()  || '#1e293b';
+
+        // ── 1. Capture the map/globe area ──────────────────────────────────
+        let mapCanvas;
+        if (globeVisible && globeInstance) {
+            // Globe: WebGL canvas is directly readable (preserveDrawingBuffer:true)
+            globeInstance.renderer().render(
+                globeInstance.scene(),
+                globeInstance.camera()
+            );
+            mapCanvas = globeInstance.renderer().domElement;
+        } else {
+            // 2D map: use html2canvas on the #map element
+            const mapEl = document.getElementById('map');
+            mapCanvas = await html2canvas(mapEl, {
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: cBg,
+                scale: window.devicePixelRatio || 1,
+                logging: false
+            });
+        }
+
+        const mapW = mapCanvas.width;
+        const mapH = mapCanvas.height;
+
+        // ── 2. Build legend data ───────────────────────────────────────────
+        const call      = document.getElementById('my-call')?.value?.trim() || 'N/A';
+        const grid      = document.getElementById('my-grid')?.value?.trim() || '';
+        const totalQSOs = currentQSOs.length;
+        const dCount    = new Set(currentQSOs.map(q => q.COUNTRY || q.DXCC).filter(Boolean)).size;
+        const bCount    = new Set(currentQSOs.map(q => q.BAND?.toUpperCase()).filter(Boolean)).size;
+        const mCount    = new Set(currentQSOs.map(q => q.MODE).filter(Boolean)).size;
+
+        // Band counts
+        const bandCounts = {};
+        currentQSOs.forEach(q => { const b = q.BAND?.toUpperCase(); if (b) bandCounts[b] = (bandCounts[b]||0)+1; });
+        const bandsSorted = Object.entries(bandCounts).sort((a,b) => b[1]-a[1]).slice(0,8);
+
+        // DXCC top 8
+        const dxccCounts = {};
+        currentQSOs.forEach(q => { const c = q.COUNTRY||q.DXCC||''; if(c) dxccCounts[c]=(dxccCounts[c]||0)+1; });
+        const dxccSorted = Object.entries(dxccCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+        // Mode counts
+        const modeCounts = {};
+        currentQSOs.forEach(q => { const m = q.MODE||''; if(m) modeCounts[m]=(modeCounts[m]||0)+1; });
+        const modesSorted = Object.entries(modeCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+        // ── 3. Measure legend height ───────────────────────────────────────
+        const LGND_W   = 260;
+        const PAD      = 18;
+        const LINE     = 20;
+        const SEC_GAP  = 14;
+        const HEAD_H   = 28;
+        let legendH    = PAD;
+
+        if (inclCallsign) {
+            legendH += HEAD_H + LINE + (grid ? LINE : 0) + SEC_GAP;
+        }
+        if (inclStats) {
+            legendH += HEAD_H + LINE * 4 + SEC_GAP;
+        }
+        if (inclBands && bandsSorted.length) {
+            legendH += HEAD_H + bandsSorted.length * LINE + SEC_GAP;
+        }
+        if (inclDXCC && dxccSorted.length) {
+            legendH += HEAD_H + dxccSorted.length * LINE + SEC_GAP;
+        }
+        if (inclModes && modesSorted.length) {
+            legendH += HEAD_H + modesSorted.length * LINE + SEC_GAP;
+        }
+        legendH += PAD;
+
+        // ── 4. Compose final canvas ────────────────────────────────────────
+        const scale   = window.devicePixelRatio || 1;
+        const outW    = mapW + LGND_W * scale;
+        const outH    = Math.max(mapH, legendH * scale);
+
+        const out     = document.createElement('canvas');
+        out.width     = outW;
+        out.height    = outH;
+        const ctx     = out.getContext('2d');
+
+        // Background
+        ctx.fillStyle = cBg;
+        ctx.fillRect(0, 0, outW, outH);
+
+        // Map
+        ctx.drawImage(mapCanvas, 0, 0, mapW, mapH);
+
+        // Legend panel background
+        const lx = mapW;
+        ctx.fillStyle = cSurf;
+        ctx.fillRect(lx, 0, LGND_W * scale, outH);
+
+        // Border line
+        ctx.strokeStyle = cBrd;
+        ctx.lineWidth   = scale;
+        ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, outH); ctx.stroke();
+
+        // Draw legend text — scale ctx so we work in logical px
+        ctx.save();
+        ctx.scale(scale, scale);
+        const lxL = mapW / scale; // left edge of legend in logical px
+
+        let cy = PAD;
+
+        const drawHeading = (txt) => {
+            ctx.font = `700 10px "JetBrains Mono", monospace`;
+            ctx.fillStyle = cAcc;
+            ctx.fillText(txt.toUpperCase(), lxL + PAD, cy + 10);
+            cy += HEAD_H;
+            ctx.strokeStyle = cBrd;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(lxL + PAD, cy - 4);
+            ctx.lineTo(lxL + LGND_W - PAD, cy - 4);
+            ctx.stroke();
+        };
+
+        const drawRow = (label, value, valColor) => {
+            ctx.font = `400 10px "DM Sans", sans-serif`;
+            ctx.fillStyle = cMuted;
+            ctx.fillText(label, lxL + PAD, cy + 11);
+            ctx.font = `700 10px "JetBrains Mono", monospace`;
+            ctx.fillStyle = valColor || cText;
+            const valW = ctx.measureText(value).width;
+            ctx.fillText(value, lxL + LGND_W - PAD - valW, cy + 11);
+            cy += LINE;
+        };
+
+        const drawBar = (label, value, max, color) => {
+            ctx.font = `400 9px "JetBrains Mono", monospace`;
+            ctx.fillStyle = cMuted;
+            ctx.fillText(label, lxL + PAD, cy + 10);
+            const barX   = lxL + PAD + 54;
+            const barMaxW= LGND_W - PAD * 2 - 54 - 28;
+            const barW   = Math.max(2, (value / max) * barMaxW);
+            ctx.fillStyle = color + '33';
+            ctx.beginPath();
+            ctx.roundRect?.(barX, cy + 3, barMaxW, 10, 2) || ctx.rect(barX, cy + 3, barMaxW, 10);
+            ctx.fill();
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect?.(barX, cy + 3, barW, 10, 2) || ctx.rect(barX, cy + 3, barW, 10);
+            ctx.fill();
+            const valStr = String(value);
+            const vw = ctx.measureText(valStr).width;
+            ctx.fillStyle = cText;
+            ctx.font = `700 9px "JetBrains Mono", monospace`;
+            ctx.fillText(valStr, lxL + LGND_W - PAD - vw, cy + 10);
+            cy += LINE;
+        };
+
+        // Callsign section
+        if (inclCallsign) {
+            drawHeading('Station');
+            ctx.font = `700 14px "JetBrains Mono", monospace`;
+            ctx.fillStyle = cAcc;
+            ctx.fillText(call, lxL + PAD, cy + 13);
+            cy += LINE;
+            if (grid) {
+                ctx.font = `400 10px "JetBrains Mono", monospace`;
+                ctx.fillStyle = cMuted;
+                ctx.fillText(grid, lxL + PAD, cy + 11);
+                cy += LINE;
+            }
+            cy += SEC_GAP;
+        }
+
+        // Stats section
+        if (inclStats) {
+            drawHeading('Statistics');
+            drawRow('Total QSOs', String(totalQSOs), cAcc);
+            drawRow('DXCC Entities', String(dCount), cAcc);
+            drawRow('Bands Used', String(bCount));
+            drawRow('Modes Used', String(mCount));
+            cy += SEC_GAP;
+        }
+
+        // Bands section
+        if (inclBands && bandsSorted.length) {
+            drawHeading('Bands');
+            const bMax = bandsSorted[0][1];
+            bandsSorted.forEach(([band, cnt]) => {
+                drawBar(band, cnt, bMax, BAND_COLORS[band] || cAcc);
+            });
+            cy += SEC_GAP;
+        }
+
+        // DXCC section
+        if (inclDXCC && dxccSorted.length) {
+            drawHeading('Countries Worked');
+            const dMax = dxccSorted[0][1];
+            dxccSorted.forEach(([country, cnt]) => {
+                const short = country.length > 18 ? country.slice(0, 16) + '…' : country;
+                drawBar(short, cnt, dMax, cAcc);
+            });
+            cy += SEC_GAP;
+        }
+
+        // Modes section
+        if (inclModes && modesSorted.length) {
+            drawHeading('Modes');
+            const mMax = modesSorted[0][1];
+            modesSorted.forEach(([mode, cnt]) => {
+                drawBar(mode, cnt, mMax, '#a78bfa');
+            });
+            cy += SEC_GAP;
+        }
+
+        // Branding watermark
+        ctx.font = `400 8px "JetBrains Mono", monospace`;
+        ctx.fillStyle = cMuted + '88';
+        ctx.fillText('Polarlog', lxL + PAD, outH / scale - 8);
+
+        ctx.restore();
+
+        // ── 5. Download PNG ────────────────────────────────────────────────
+        status.textContent = 'Saving…';
+        const link = document.createElement('a');
+        link.download = `polarlog-${call}-${new Date().toISOString().slice(0,10)}.png`;
+        link.href = out.toDataURL('image/png');
+        link.click();
+
+        modal.style.display = 'none';
+    } catch (err) {
+        console.error('Screenshot failed:', err);
+        status.textContent = 'Export failed: ' + err.message;
+    } finally {
+        capture.disabled = false;
+    }
+}
+
 // ─── 3D Globe ────────────────────────────────────────────────────────────────
 
 function toggleGlobe() {
@@ -1142,13 +1410,14 @@ function initGlobe(el) {
 
     const bgImg = 'https://unpkg.com/three-globe@2/example/img/night-sky.png';
 
-    globeInstance = Globe({ 
-        rendererConfig: { 
-            antialias: false, 
+    globeInstance = Globe({
+        rendererConfig: {
+            antialias: false,
             powerPreference: 'high-performance',
             precision: 'mediump', // Optimized for integrated graphics stability
-            stencil: false       // Save memory overhead
-        } 
+            stencil: false,       // Save memory overhead
+            preserveDrawingBuffer: true // Needed for PNG screenshot export
+        }
     })(el)
         .width(el.offsetWidth)
         .height(el.offsetHeight)

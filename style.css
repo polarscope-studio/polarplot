@@ -40,7 +40,7 @@ body { font-family: var(--font-main); color: var(--text); display: flex; }
 * { scrollbar-width: thin; scrollbar-color: var(--brd) var(--bg); }
 
 #app { display: flex; width: 100%; height: 100vh; }
-.sidebar { width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 1.25rem; z-index: 100; overflow-y: auto; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); contain: layout style; }
+.sidebar { width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 1.25rem; z-index: 100; overflow-y: auto; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
 #map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; transform: translateZ(0); }
 
 /* Station & History Panels (Centered Glassy Modals) */
