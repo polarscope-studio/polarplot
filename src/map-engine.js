@@ -281,20 +281,18 @@ export class MapEngine {
   }
 
   /**
-   * Clear all markers and paths
+   * Clear markers only — paths are managed separately via clearPaths()
    */
   clear() {
     this.markers.clearLayers();
     this.standaloneMarkers.clearLayers();
-    this.paths.clearLayers();
   }
 
   /**
-   * Clear only markers — leave paths intact
+   * Clear paths layer only
    */
-  clearMarkersOnly() {
-    this.markers.clearLayers();
-    this.standaloneMarkers.clearLayers();
+  clearPaths() {
+    this.paths.clearLayers();
   }
 
   /**

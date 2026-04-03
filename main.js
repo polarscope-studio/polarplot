@@ -946,6 +946,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 stats.textContent = `QRZ Logbook: ${logbookMatched} matched from ${logbookMap.size} entries`;
                 updateLoadingStatus(true, `Logbook: ${logbookMatched}/${missing.length} resolved`, 15);
+                mapEngine.clear(); mapEngine.clearPaths();
                 processQSOs(currentQSOs, false, true); // new locations → rebuild paths
                 await new Promise(r => setTimeout(r, 400)); // brief pause so user sees the count
             } catch (e) {
@@ -987,7 +988,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
             }
 
-            isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false, true); btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA';
+            isResolving = false; updateLoadingStatus(false);
+            // Synchronously wipe all old markers before the async replot so nothing lingers
+            mapEngine.clear();
+            mapEngine.clearPaths();
+            processQSOs(currentQSOs, false, true);
+            btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA';
         }
 
         // ── QRZ ADIF cross-reference (CORS-free) ────────────────────────
@@ -2254,7 +2260,7 @@ function renderTotalPanel(container) {
         const bandColor = BAND_COLORS[s.band?.toUpperCase()] || 'var(--acc)';
         return `<tr>
             <td style="color:var(--acc);font-weight:bold;">${qrzLink(s.call, s.call)}</td>
-            <td>${flagHtml}${s.country}</td>
+            <td>${flagHtml}${s.country || ISO_TO_NAME[iso] || ''}</td>
             <td style="color:${bandColor};font-weight:bold;">${s.band}</td>
             <td>${s.mode}</td>
             <td>${formatDate(s.lastDate)}${s.lastTime ? `<br><span style="font-size:0.7em;color:var(--muted);">${formatTime(s.lastTime)}</span>` : ''}</td>
@@ -2369,13 +2375,13 @@ function processQSOs(qsos, shouldFitBounds = false, rebuildPaths = false) {
 function _doProcessQSOs(qsos, shouldFitBounds) {
     if (!mapEngine) return;
     const doPaths = _pathsDirty;
+    // Always clear markers so old ones never persist
+    mapEngine.clear();
     if (doPaths) {
-        mapEngine.clear(); // full clear including paths
+        mapEngine.clearPaths();
         _pathsDirty = false;
-    } else {
-        mapEngine.clearMarkersOnly(); // leave paths intact
     }
-    // When not rebuilding paths, skip adding them in plotQSO
+    // Only rebuild paths into the layer when flagged dirty
     mapEngine._skipPathBuild = !doPaths;
     const filtered = qsos.filter(q => {
         const mSearch = !searchQuery || q.CALL.toUpperCase().startsWith(searchQuery);
