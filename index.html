@@ -480,20 +480,27 @@
                   <div class="splash-link-desc">Download your ADIF log and manage your callsign page</div>
                 </div>
               </a>
-              <a class="splash-link-row" href="https://paypal.me/M7PXZ" target="_blank" rel="noopener">
+              <a class="splash-link-row" href="https://paypal.me/mitchkmn" target="_blank" rel="noopener">
                 <span class="splash-link-icon">☕</span>
                 <div>
                   <div class="splash-link-label">Support Development</div>
                   <div class="splash-link-desc">Buy me a coffee — keep Polarplot free and improving</div>
                 </div>
               </a>
-              <a class="splash-link-row" href="https://github.com" target="_blank" rel="noopener">
-                <span class="splash-link-icon">🐙</span>
+              <a class="splash-link-row" href="https://discord.com/invite/EswKNbn5yp" target="_blank" rel="noopener">
+                <span class="splash-link-icon">💬</span>
                 <div>
-                  <div class="splash-link-label">GitHub</div>
-                  <div class="splash-link-desc">Source code, issues, and contributions</div>
+                  <div class="splash-link-label">Discord Community</div>
+                  <div class="splash-link-desc">Chat, feedback, and amateur radio discussion</div>
                 </div>
               </a>
+              <div class="splash-link-row" style="opacity:0.4;cursor:default;">
+                <span class="splash-link-icon">🐙</span>
+                <div>
+                  <div class="splash-link-label">GitHub <span style="font-size:0.65rem;font-weight:400;color:var(--muted);margin-left:6px;">COMING SOON</span></div>
+                  <div class="splash-link-desc">Source code, issues, and contributions</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -501,7 +508,24 @@
           <div class="splash-pane" id="splash-changelog">
             <h3>Version History</h3>
             <div class="splash-changelog-entry">
-              <div class="splash-changelog-ver">v1.2.0 — Latest</div>
+              <div class="splash-changelog-ver">v1.3.0 — Latest</div>
+              <ul>
+                <li>PNG screenshot export with selectable stat panels (2D &amp; 3D)</li>
+                <li>Tactical Search Hub now filters live in 3D globe, switches to individual dots while searching</li>
+                <li>Contact card popup locks to dot while orbiting in 3D, fades out when contact rotates behind globe</li>
+                <li>Distance units (KM/MI) moved to map overlay button group</li>
+                <li>QRZ Logbook cross-reference — drop your QRZ ADIF export to enrich missing locations without a proxy</li>
+                <li>Resolve Missing now pre-matches against QRZ logbook before falling back to per-callsign XML lookup</li>
+                <li>Data Proxy activation link and info tooltip added</li>
+                <li>Show All QSOs range now correctly uses home location set via Maidenhead grid</li>
+                <li>GitHub Pages deploy fixed — Node setup action corrected, loading.png and logo.png now bundled correctly</li>
+                <li>Custom domain support: polarplot.net</li>
+                <li>Band chips glow on hover</li>
+                <li>Globe screenshot captures live WebGL frame and HTML dots composited together</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.2.0</div>
               <ul>
                 <li>Added 3D Globe view via Globe.gl WebGL renderer</li>
                 <li>Expanded PREFIX_MAP to cover all ITU amateur prefixes</li>
