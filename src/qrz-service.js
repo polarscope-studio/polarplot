@@ -71,7 +71,7 @@ export class QRZService {
     const key = this.apiKey || this.sessionKey;
     if (!key) throw new Error('No API key for logbook fetch');
 
-    const body = new URLSearchParams({ KEY: key, ACTION: 'FETCH', OPTION: 'TYPE:ADIF' });
+    const body = new URLSearchParams({ KEY: key, ACTION: 'FETCH', OPTION: 'TYPE:ADIF,STATUS:ALL' });
     const fetchOpts = {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -166,6 +166,68 @@ export class QRZService {
     }
 
     return locationMap;
+  }
+
+  /**
+   * Fetch all QSOs from QRZ logbook and return a Set of confirmed callsigns (uppercase).
+   * A callsign is confirmed if any QSO has LOTW_QSL_RCVD=Y, QSL_RCVD=Y, or EQSL_QSL_RCVD=Y.
+   * Separate from fetchLogbook so it can succeed/fail independently.
+   */
+  async fetchConfirmedCalls() {
+    const key = this.apiKey || this.sessionKey;
+    if (!key) throw new Error('No API key');
+
+    const urls = [];
+    if (this.proxyUrl) urls.push(`${this.proxyUrl}https://logbook.qrz.com/api`);
+    urls.push('https://logbook.qrz.com/api');
+
+    const body = new URLSearchParams({ KEY: key, ACTION: 'FETCH', OPTION: 'TYPE:ADIF,STATUS:ALL' }).toString();
+    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body };
+
+    let raw = null;
+    for (const url of urls) {
+      try {
+        const r = await fetch(url, fetchOpts);
+        const t = await r.text();
+        if (t.includes('corsdemo') || t.includes('This API enables cross-origin')) continue;
+        raw = t;
+        break;
+      } catch {}
+    }
+    if (!raw) throw new Error('Unable to reach QRZ logbook');
+
+    console.log('[QRZ confirmed] raw response:', raw.slice(0, 400));
+
+    const resultMatch = raw.match(/RESULT=([^&\s]+)/);
+    const result = resultMatch ? decodeURIComponent(resultMatch[1]) : null;
+    console.log('[QRZ confirmed] RESULT field:', result);
+    if (result && result !== 'OK') throw new Error(`QRZ: ${result}`);
+
+    const confirmedCalls = new Set();
+    const aIdx = raw.indexOf('ADIF=');
+    if (aIdx === -1) throw new Error('No ADIF in logbook response');
+
+    const adif = decodeURIComponent(raw.substring(aIdx + 5));
+    const eoh  = adif.toUpperCase().indexOf('<EOH>');
+    const part = eoh !== -1 ? adif.substring(eoh + 5) : adif;
+
+    for (const rec of part.split(/<EOR>/i)) {
+      if (!rec.trim()) continue;
+      const getField = (name) => {
+        const m = rec.match(new RegExp(`<${name}:(\\d+)[^>]*>([^<]*)`, 'i'));
+        return m ? m[2].substring(0, parseInt(m[1])).trim().toUpperCase() : '';
+      };
+      const call = getField('CALL');
+      if (!call) continue;
+      const lotw = getField('LOTW_QSL_RCVD');
+      const qsl  = getField('QSL_RCVD');
+      const eqsl = getField('EQSL_QSL_RCVD');
+      if (lotw === 'Y' || qsl === 'Y' || eqsl === 'Y') {
+        confirmedCalls.add(call);
+      }
+    }
+    console.log('[QRZ confirmed] parsed:', confirmedCalls.size, 'confirmed calls from', part.split(/<EOR>/i).length - 1, 'QSOs');
+    return confirmedCalls;
   }
 
   async login() {

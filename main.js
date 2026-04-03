@@ -5,6 +5,7 @@ import { QRZService } from './src/qrz-service.js';
 let mapEngine;
 let worker;
 let currentQSOs = [];
+let confirmedCalls = null; // Set<string> of confirmed callsigns from QRZ, null = not fetched yet
 let searchQuery = '';
 let selectedDXCC = '';
 let isResolving = false;
@@ -17,6 +18,10 @@ const FLAG_OVERRIDES = {
     'gb-wls': 'https://upload.wikimedia.org/wikipedia/commons/d/dc/Flag_of_Wales.svg',
     'gb-nir': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Ulster_Banner.svg',
 };
+
+function qrzLink(call, innerHtml, extraStyle = '') {
+    return `<a href="https://www.qrz.com/db/${encodeURIComponent(call)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;${extraStyle}">${innerHtml}</a>`;
+}
 
 function buildFlagImg(iso, name, cdnWidth, style, onFail) {
     if (!iso) return '';
@@ -692,7 +697,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (coords) {
                     mapEngine.setHomeLocation(coords.lat, coords.lon);
                     localStorage.setItem('polarlog_my_grid', grid);
-                    processQSOs(currentQSOs, false);
+                    processQSOs(currentQSOs, false, true);
                 }
             } else {
                 const lat = parseFloat(homeLatInput.value);
@@ -701,7 +706,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     mapEngine.setHomeLocation(lat, lon);
                     localStorage.setItem('polarlog_my_lat', lat);
                     localStorage.setItem('polarlog_my_lon', lon);
-                    processQSOs(currentQSOs, false);
+                    processQSOs(currentQSOs, false, true);
                 }
             }
         };
@@ -740,7 +745,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const val = e.target.checked;
                 localStorage.setItem('polarlog_show_paths', val);
                 mapEngine.setPathsVisible(val);
-                if (val) processQSOs(currentQSOs, false); // build paths lazily on first enable
+                // Build paths on first enable only; if already built, showing the layer is enough
+                if (val && mapEngine.paths.getLayers().length === 0) processQSOs(currentQSOs, false, true);
                 if (globeVisible && globeInstance) {
                     if (val) {
                         if (currentQSOs.length) showGlobeArcLoading();
@@ -941,7 +947,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 stats.textContent = `QRZ Logbook: ${logbookMatched} matched from ${logbookMap.size} entries`;
                 updateLoadingStatus(true, `Logbook: ${logbookMatched}/${missing.length} resolved`, 15);
-                processQSOs(currentQSOs, false);
+                processQSOs(currentQSOs, false, true); // new locations → rebuild paths
                 await new Promise(r => setTimeout(r, 400)); // brief pause so user sees the count
             } catch (e) {
                 // Logbook fetch is best-effort — fall through to XML lookups
@@ -949,7 +955,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await new Promise(r => setTimeout(r, 600));
             }
 
-            // ── Phase 2: XML lookup for remaining unresolved contacts ───────
+            // ── Phase 2: Fetch QSL confirmed status independently ──────────
+            console.log('[Phase 2] starting, apiKey:', !!qrz.apiKey, 'sessionKey:', !!qrz.sessionKey);
+            try {
+                stats.textContent = 'Fetching QSL confirmation status...';
+                console.log('[Phase 2] calling fetchConfirmedCalls...');
+                confirmedCalls = await qrz.fetchConfirmedCalls();
+                stats.textContent = `QSL confirmed: ${confirmedCalls.size} contacts`;
+                processQSOs(currentQSOs, false);
+                await new Promise(r => setTimeout(r, 400));
+            } catch (e) {
+                confirmedCalls = null; // null = status unavailable (not fetched/failed)
+                console.error('[QRZ confirmed] FAILED:', e.message, e);
+                stats.textContent = `QSL status unavailable (${e.message.slice(0,60)})`;
+                await new Promise(r => setTimeout(r, 1200));
+            }
+
+            // ── Phase 3: XML lookup for remaining unresolved contacts ───────
             const stillMissing = missing.filter(q => !q.LAT || !q.LON);
             let resolvedCount = logbookMatched, totalToResolve = stillMissing.length, processedCount = 0;
             let lastRedraw = Date.now();
@@ -981,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
             }
 
-            isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false); btn.disabled = false; btn.textContent = 'RESOLVE MISSING';
+            isResolving = false; updateLoadingStatus(false); processQSOs(currentQSOs, false, true); btn.disabled = false; btn.textContent = 'RESOLVE MISSING';
         }
 
         // ── QRZ ADIF cross-reference (CORS-free) ────────────────────────
@@ -1036,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             qrzAdifStatus.textContent = matched > 0
                 ? `✓ ${matched} contacts enriched from ${refMap.size} logbook entries`
                 : 'No callsign matches found between logs.';
-            if (matched > 0) { processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); }
+            if (matched > 0) { processQSOs(currentQSOs, false, true); if (globeVisible && globeInstance) updateGlobeData(); }
         };
 
         if (qrzAdifDropzone) {
@@ -1200,7 +1222,7 @@ function finalizeParsedData(data) {
     document.getElementById('stat-dxcc').textContent = dCount.size;
     document.getElementById('stat-bands').textContent = bCount.size;
     document.getElementById('stat-modes').textContent = mCount.size;
-    mapEngine.fitBounds(); processQSOs(data, true); updateLoadingStatus(false);
+    mapEngine.fitBounds(); processQSOs(data, true, true); updateLoadingStatus(false);
 
     // If in globe mode, auto-enable clustering now that a log is loaded
     if (globeVisible) {
@@ -1442,6 +1464,9 @@ async function takeScreenshot(cameraView = false) {
                 globeInstance.pointOfView({ lat: 20, lng: 0, altitude: 2.5 }, 0);
                 await new Promise(r => setTimeout(r, 180)); // let globe.gl reposition HTML dots
             }
+            // Freeze the globe so damping doesn't drift during capture
+            globeInstance.pauseAnimation();
+            await new Promise(r => requestAnimationFrame(r)); // flush last frame
 
             status.textContent = 'Capturing globe…';
             globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
@@ -1462,9 +1487,14 @@ async function takeScreenshot(cameraView = false) {
                 ignoreElements: el => el.id === 'globe-arc-overlay'
             });
 
-            // Restore camera, remove veil
-            if (!cameraView) globeInstance.pointOfView(savedPov, 0);
+            // Restore camera, remove veil, then resume so user can interact
+            if (!cameraView) {
+                globeInstance.pointOfView(savedPov, 0);
+                globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
+            }
             document.body.removeChild(_veil);
+            globeInstance.resumeAnimation();
+            setTimeout(() => globeInstance.pauseAnimation(), 800);
 
             const outW = mapW + PW * scale;
             const outH = mapH;
@@ -1563,6 +1593,9 @@ function toggleGlobe() {
         mapEl.style.display   = 'none';
         globeEl.classList.add('active');
         document.getElementById('overlay-picker')?.classList.remove('visible');
+        // Dismiss 2D contact cards and any open popup
+        mapEngine.map.closePopup();
+        document.getElementById('history-panel')?.classList.remove('visible');
 
         // Always enforce paths off + clustering on when entering globe
         const chkPaths    = document.getElementById('chk-paths');
@@ -1618,6 +1651,9 @@ function toggleGlobe() {
         mapEl.style.display = '';
         mapEngine.map.invalidateSize();
         document.getElementById('overlay-picker')?.classList.remove('visible');
+        // Dismiss 3D globe popup and contact cards
+        hideGlobePopup();
+        document.getElementById('history-panel')?.classList.remove('visible');
     }
 }
 
@@ -2027,7 +2063,7 @@ function showGlobePopup(point, clientX, clientY) {
             : 0.04;
         globeInstance.resumeAnimation();
         globeInstance.pointOfView({ lat: point.lat, lng: point.lng, altitude: targetAlt }, 1200);
-        setTimeout(() => updateGlobeData(), 1300);
+        setTimeout(() => { _rebuildGlobeContacts(); updateGlobeDots(); }, 1300); // arcs stay intact
         return;
     } else {
         // Single station card — resolve full QSO history
@@ -2042,6 +2078,12 @@ function showGlobePopup(point, clientX, clientY) {
         const bandColor = BAND_COLORS[band] || 'var(--acc)';
         const iso     = DXCC_MAP[(country).toUpperCase()] || getISOFromCallsign(call);
         const flagHtml = iso ? buildFlagImg(iso, country, 40, 'width:100%;height:100%;object-fit:cover;border-radius:2px;') : '📡';
+        const isConf = confirmedCalls === null ? undefined : confirmedCalls.has(call.toUpperCase());
+        const confHtml = isConf === true
+            ? `<div style="display:flex;align-items:center;gap:5px;padding:6px 14px 2px;"><span style="color:#22c55e;font-size:0.85rem;font-weight:700;">✓</span><span style="color:#22c55e;font-size:0.7rem;font-family:var(--font-mono);">Confirmed</span></div>`
+            : isConf === false
+            ? `<div style="display:flex;align-items:center;gap:5px;padding:6px 14px 2px;"><span style="color:#ef4444;font-size:0.85rem;font-weight:700;">✗</span><span style="color:#ef4444;font-size:0.7rem;font-family:var(--font-mono);">Unconfirmed</span></div>`
+            : `<div style="padding:6px 14px 2px;"><span style="color:#64748b;font-size:0.68rem;font-family:var(--font-mono);">― QSL status unavailable</span></div>`;
 
         let distStr = '';
         if (hLat && hLon && qso.LAT && qso.LON)
@@ -2057,7 +2099,7 @@ function showGlobePopup(point, clientX, clientY) {
           <div class="globe-popup-header">
             <div class="globe-popup-flag">${flagHtml}</div>
             <div>
-              <div class="globe-popup-call" style="color:${bandColor}">${call}</div>
+              <div class="globe-popup-call" style="color:${bandColor}">${qrzLink(call, call)}</div>
               <div class="globe-popup-country">${country}</div>
             </div>
           </div>
@@ -2069,7 +2111,8 @@ function showGlobePopup(point, clientX, clientY) {
             ${lastDate ? `<div class="globe-popup-row"><span>Last QSO</span><span class="globe-popup-val">${lastDate}${lastTime}</span></div>` : ''}
             <div class="globe-popup-row"><span>QSOs</span><span class="globe-popup-val" style="color:${bandColor};font-weight:700;">${qsoHistory.length}</span></div>
           </div>
-          <div style="padding:0 14px 12px;">
+          ${confHtml}
+          <div style="padding:4px 14px 12px;">
             <button class="globe-popup-hist-btn" style="width:100%;padding:7px;background:color-mix(in srgb,${bandColor},transparent 88%);border:1px solid ${bandColor};color:${bandColor};border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">📜 Show All QSOs</button>
           </div>`;
 
@@ -2233,7 +2276,7 @@ function renderTotalPanel(container) {
         const flagHtml = buildFlagImg(iso, s.country, 40, 'height:13px;border-radius:2px;vertical-align:middle;margin-right:5px;', "this.onerror=null;this.style.display='none';");
         const bandColor = BAND_COLORS[s.band?.toUpperCase()] || 'var(--acc)';
         return `<tr>
-            <td style="color:var(--acc);font-weight:bold;">${s.call}</td>
+            <td style="color:var(--acc);font-weight:bold;">${qrzLink(s.call, s.call)}</td>
             <td>${flagHtml}${s.country}</td>
             <td style="color:${bandColor};font-weight:bold;">${s.band}</td>
             <td>${s.mode}</td>
@@ -2339,14 +2382,24 @@ function renderModesPanel(container) {
 }
 
 let _processQSOsTimer = null;
-function processQSOs(qsos, shouldFitBounds = false) {
+let _pathsDirty = true; // when true, next _doProcessQSOs will rebuild 2D paths from scratch
+function processQSOs(qsos, shouldFitBounds = false, rebuildPaths = false) {
     if (!mapEngine) return;
+    if (rebuildPaths) _pathsDirty = true;
     clearTimeout(_processQSOsTimer);
     _processQSOsTimer = setTimeout(() => _doProcessQSOs(qsos, shouldFitBounds), 0);
 }
 function _doProcessQSOs(qsos, shouldFitBounds) {
     if (!mapEngine) return;
-    mapEngine.clear();
+    const doPaths = _pathsDirty;
+    if (doPaths) {
+        mapEngine.clear(); // full clear including paths
+        _pathsDirty = false;
+    } else {
+        mapEngine.clearMarkersOnly(); // leave paths intact
+    }
+    // When not rebuilding paths, skip adding them in plotQSO
+    mapEngine._skipPathBuild = !doPaths;
     const filtered = qsos.filter(q => {
         const mSearch = !searchQuery || q.CALL.toUpperCase().startsWith(searchQuery);
         const mDXCC = !selectedDXCC || (q.COUNTRY || q.DXCC) === selectedDXCC;
@@ -2372,7 +2425,8 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
                 || getISOFromCoords(parseFloat(latest.LAT), parseFloat(latest.LON));
             const cName = latest.COUNTRY || latest.DXCC || ISO_TO_NAME[iso] || 'Unknown Station';
             const flagHtml = iso ? buildFlagImg(iso, cName, 160, 'width:100%;height:100%;object-fit:cover;border-radius:2px;', "this.onerror=null;this.src='';this.parentElement.innerHTML='📡';") : '📡';
-            mapEngine.plotQSO(history, BAND_COLORS[latest.BAND?.toUpperCase()] || '#38bdf8', { tactical: { dist: distStr, flagHtml, name: cName } });
+            const confirmed = confirmedCalls === null ? undefined : confirmedCalls.has(latest.CALL?.toUpperCase());
+            mapEngine.plotQSO(history, BAND_COLORS[latest.BAND?.toUpperCase()] || '#38bdf8', { tactical: { dist: distStr, flagHtml, name: cName, confirmed } });
         }
     });
     if (shouldFitBounds) mapEngine.fitBounds();
@@ -2386,7 +2440,7 @@ function showHistoryPanel(history) {
     const homeLoc = mapEngine?.homeLocation;
     const hLat = homeLoc?.[0] || parseFloat(document.getElementById('my-lat').value) || 0;
     const hLon = homeLoc?.[1] || parseFloat(document.getElementById('my-lon').value) || 0;
-    document.getElementById('hist-call').textContent = latest.CALL;
+    document.getElementById('hist-call').innerHTML = qrzLink(latest.CALL, latest.CALL);
     document.getElementById('hist-total').textContent = history.length;
     const loc = latest.COUNTRY || latest.DXCC || '';
     const locEl = document.getElementById('hist-location');

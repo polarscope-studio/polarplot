@@ -113,6 +113,11 @@ export class MapEngine {
     const flagHtml = tactical.flagHtml || '📡';
     const band     = latest.BAND || 'N/A';
     const mode     = latest.MODE || 'N/A';
+    const confHtml = tactical.confirmed === true
+        ? `<div style="display:flex;align-items:center;gap:5px;padding:6px 14px 2px;"><span style="color:#22c55e;font-size:0.85rem;font-weight:700;">✓</span><span style="color:#22c55e;font-size:0.7rem;font-family:var(--font-mono,monospace);">Confirmed</span></div>`
+        : tactical.confirmed === false
+        ? `<div style="display:flex;align-items:center;gap:5px;padding:6px 14px 2px;"><span style="color:#ef4444;font-size:0.85rem;font-weight:700;">✗</span><span style="color:#ef4444;font-size:0.7rem;font-family:var(--font-mono,monospace);">Unconfirmed</span></div>`
+        : `<div style="padding:6px 14px 2px;"><span style="color:#64748b;font-size:0.68rem;font-family:var(--font-mono,monospace);">― QSL status unavailable</span></div>`;
 
     const _months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     const _fd      = raw => (!raw || raw.length < 8) ? null
@@ -125,7 +130,7 @@ export class MapEngine {
       <div class="globe-popup-header" style="position:relative;">
         <div class="globe-popup-flag">${flagHtml}</div>
         <div>
-          <div class="globe-popup-call" style="color:${color}">${latest.CALL}</div>
+          <div class="globe-popup-call" style="color:${color}"><a href="https://www.qrz.com/db/${encodeURIComponent(latest.CALL)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">${latest.CALL}</a></div>
           <div class="globe-popup-country">${cName}</div>
         </div>
       </div>
@@ -137,7 +142,8 @@ export class MapEngine {
         ${lastDate ? `<div class="globe-popup-row"><span>Last QSO</span><span class="globe-popup-val">${lastDate}${lastTime}</span></div>` : ''}
         <div class="globe-popup-row"><span>QSOs</span><span class="globe-popup-val" style="color:${color};font-weight:700;">${historyCount}</span></div>
       </div>
-      <div style="padding:0 14px 12px;">
+      ${confHtml}
+      <div style="padding:4px 14px 12px;">
         <button class="scard-btn btn-show-history" style="width:100%;padding:7px;background:color-mix(in srgb,${color},transparent 88%);border:1px solid ${color};color:${color};border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">📜 Show All QSOs</button>
       </div>
     `;
@@ -179,8 +185,8 @@ export class MapEngine {
     clusterMarker.on('click', onMarkerClick);
     standaloneMarker.on('click', onMarkerClick);
 
-    // Draw Great Circle Path — only compute geometry when paths are actually visible
-    if (this.homeLocation && this.pathsVisible) {
+    // Draw Great Circle Path — only when visible and not a markers-only refresh
+    if (this.homeLocation && this.pathsVisible && !this._skipPathBuild) {
         this.addPath(this.homeLocation, [lat, lon], color, Array.isArray(qso) ? qso : [qso], popupContent);
     }
   }
@@ -287,6 +293,14 @@ export class MapEngine {
     this.markers.clearLayers();
     this.standaloneMarkers.clearLayers();
     this.paths.clearLayers();
+  }
+
+  /**
+   * Clear only markers — leave paths intact
+   */
+  clearMarkersOnly() {
+    this.markers.clearLayers();
+    this.standaloneMarkers.clearLayers();
   }
 
   /**
