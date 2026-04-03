@@ -713,8 +713,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 mapEngine.setPathsVisible(val);
                 if (val) processQSOs(currentQSOs, false); // build paths lazily on first enable
                 if (globeVisible && globeInstance) {
-                    if (val) showGlobeArcLoading();
-                    updateGlobeArcs();
+                    if (val) {
+                        showGlobeArcLoading();
+                        requestAnimationFrame(() => requestAnimationFrame(() => updateGlobeArcs()));
+                    } else {
+                        updateGlobeArcs();
+                    }
                 }
             });
         }
@@ -1049,7 +1053,10 @@ function toggleGlobe() {
         }
 
         if (typeof showTacticalToast === 'function') {
-            showTacticalToast('<b>Cluster Mode</b> is highly recommended for optimal performance when using the 3D Globe with large datasets.', 6000);
+            if (!localStorage.getItem('polarlog_cluster_toast_shown')) {
+                showTacticalToast('<b>Cluster Mode</b> is highly recommended for optimal performance when using the 3D Globe with large datasets.', 6000);
+                localStorage.setItem('polarlog_cluster_toast_shown', '1');
+            }
         }
 
         if (!globeInitialized) {
@@ -1085,11 +1092,6 @@ function toggleGlobe() {
 }
 
 function showGlobeArcLoading() {
-    const overlay  = document.getElementById('globe-arc-overlay');
-    const bar      = document.getElementById('globe-arc-progress-bar');
-    const statusEl = document.getElementById('globe-arc-status');
-    if (!overlay || !bar || !statusEl) return;
-
     const stages = [
         { pct: 8,  msg: 'Collecting contact coordinates...' },
         { pct: 20, msg: 'Calculating great-circle trajectories...' },
@@ -1102,23 +1104,20 @@ function showGlobeArcLoading() {
         { pct: 100, msg: 'Contact paths ready.' },
     ];
 
-    bar.style.transition = 'none';
-    bar.style.width = '0%';
-    overlay.classList.add('active');
+    const bar = document.getElementById('loading-progress-bar');
+    if (bar) { bar.style.transition = 'none'; bar.style.width = '0%'; }
 
-    const interval = 10000 / stages.length;
+    updateLoadingStatus(true, stages[0].msg, 0);
+
+    const interval = 7000 / stages.length;
     stages.forEach((stage, i) => {
-        setTimeout(() => {
-            bar.style.transition = 'width 0.5s ease';
-            bar.style.width = stage.pct + '%';
-            statusEl.textContent = stage.msg;
-        }, i * interval);
+        setTimeout(() => updateLoadingStatus(true, stage.msg, stage.pct), i * interval);
     });
 
     setTimeout(() => {
-        overlay.classList.remove('active');
-        setTimeout(() => { bar.style.width = '0%'; }, 400);
-    }, 10000);
+        updateLoadingStatus(false);
+        showTacticalToast('Contact lines may re-render on zoom — this is normal.', 6000);
+    }, 7000);
 }
 
 function forceGlobeRender() {
@@ -1179,15 +1178,17 @@ function initGlobe(el) {
         globeInstance.resumeAnimation();
     });
     _ctrl.addEventListener('end', () => {
-        clearTimeout(_idleTimer);
-        _idleTimer = setTimeout(() => globeInstance.pauseAnimation(), 600);
+        // Don't set idle timer here — damping keeps firing 'change' after release,
+        // so we let the change listener handle the pause once motion truly stops
     });
 
-    // Re-cluster when zoom level changes — dots only, never arcs
+    // Re-cluster on zoom + reset idle timer on every change (covers damping deceleration)
     let _lastCellDeg = null;
     let _zoomDebounce;
     globeInstance.controls().addEventListener('change', () => {
+        clearTimeout(_idleTimer);
         clearTimeout(_zoomDebounce);
+        _idleTimer = setTimeout(() => globeInstance.pauseAnimation(), 800);
         _zoomDebounce = setTimeout(() => {
             const alt = globeInstance.pointOfView().altitude;
             const cell = alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : alt > 0.15 ? 0.5 : 0;
@@ -1248,7 +1249,9 @@ function buildGlobeDots(contactList, cellDeg = 4) {
             call: single?.call || null, country: single?.country || null
         };
     });
-    return cells.sort((a, b) => b.count - a.count).slice(0, 250);
+    const clusters    = cells.filter(c => c.clusterSize > 1).sort((a, b) => b.count - a.count).slice(0, 200);
+    const individuals = cells.filter(c => c.clusterSize === 1);
+    return [...clusters, ...individuals];
 }
 
 
@@ -1342,11 +1345,7 @@ function updateGlobeArcs() {
     if (!globeInstance) return;
     const arcsOn = document.getElementById('chk-paths')?.checked ?? false;
     if (_globeHasHome && arcsOn) {
-        const MAX_ARCS = 800;
-        const arcSource = _globeContactList.length > MAX_ARCS
-            ? _globeContactList.filter((_, i) => i % Math.ceil(_globeContactList.length / MAX_ARCS) === 0)
-            : _globeContactList;
-        const arcs = arcSource.map(c => ({
+        const arcs = _globeContactList.map(c => ({
             startLat: _globeHLat, startLng: _globeHLon,
             endLat: c.lat, endLng: c.lng,
             color: hexAlpha(BAND_COLORS[c.band] || '#38bdf8', 0.55),
@@ -1410,7 +1409,7 @@ function showGlobePopup(point, clientX, clientY) {
         const mode    = qso.MODE || 'N/A';
         const bandColor = BAND_COLORS[band] || 'var(--acc)';
         const iso     = DXCC_MAP[(country).toUpperCase()] || getISOFromCallsign(call);
-        const flagHtml = iso ? buildFlagImg(iso, country, 28, 'width:100%;height:100%;object-fit:cover;border-radius:2px;') : '📡';
+        const flagHtml = iso ? buildFlagImg(iso, country, 40, 'width:100%;height:100%;object-fit:cover;border-radius:2px;') : '📡';
 
         let distStr = '';
         if (hLat && hLon && qso.LAT && qso.LON)
@@ -1737,8 +1736,9 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
 
 function showHistoryPanel(history) {
     const latest = history[0];
-    const hLat = parseFloat(document.getElementById('my-lat').value) || 0;
-    const hLon = parseFloat(document.getElementById('my-lon').value) || 0;
+    const homeLoc = mapEngine?.homeLocation;
+    const hLat = homeLoc?.[0] || parseFloat(document.getElementById('my-lat').value) || 0;
+    const hLon = homeLoc?.[1] || parseFloat(document.getElementById('my-lon').value) || 0;
     document.getElementById('hist-call').textContent = latest.CALL;
     document.getElementById('hist-total').textContent = history.length;
     const loc = latest.COUNTRY || latest.DXCC || '';
