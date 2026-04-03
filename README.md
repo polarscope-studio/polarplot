@@ -17,6 +17,7 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Compatible with all major logging software: **WSJTX**, **WSJT-X**, **Log4OM**, **HAMRS**, **JS8Call**, **DXKeeper**, and any other ADIF-compliant exporter
 - Optional **QRZ Logbook** import — pull your entire online logbook directly via the QRZ API
 
+
 ### 🗺️ 2D Map
   
 - **Interactive Leaflet map** with five switchable base layers:
@@ -33,6 +34,7 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Animated **home beacon** that scales with zoom level
 - `preferCanvas: true` for hardware-accelerated marker rendering
 
+
 ### 🌍 3D Globe
   
 - Powered by **Globe.gl** (Three.js WebGL)
@@ -42,6 +44,7 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Smooth camera controls with inertia and damping
 - Click any contact dot or arc for the full station popup
 
+
 ### 📋 Contact Cards & Popups
   
 - Every callsign is a **clickable QRZ hyperlink** — one click opens the station's QRZ page in a new tab
@@ -49,17 +52,20 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - **Full QSO history** panel — see every individual contact with that station, sorted by date
 - Popups work identically in 2D map view, 3D globe view, and the stats panel
 
+
 ### 📡 Band Filtering
   
 - Per-band toggle chips for every amateur band (160m → 70cm and beyond)
 - Each band has a unique accent color carried through markers, paths, arcs, and popups
 - Band filter state persists across sessions via localStorage
 
+
 ### 📊 Stats Panel — All Contacts
 - Sortable table of every unique callsign worked
 - Columns: callsign, country (flag + name), band, mode, last QSO date, QSO count
 - Full-text search across callsigns, countries, bands, and modes
 - Country names resolved from callsign prefix when not present in the log (covers WSJTX-style logs)
+
 
 ### 🔍 QRZ Integration
   
@@ -68,17 +74,20 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Session key caching — logs in once, reuses the session key for the entire batch
 - CORS proxy support for environments that need it
 
+
 ### 📍 Location Input
   
 - Set home QTH by **Maidenhead grid square** or **manual lat/lon**
 - Auto-resolves your own callsign via QRZ to pre-fill home coordinates
 - Home location persists in localStorage
 
+
 ### 🎨 Themes & Customization
   
 - Multiple UI color themes selectable from the settings panel
 - Accent color propagates to markers, paths, arcs, cluster icons, and popup highlights
 - All preferences (theme, bands, units, map layer, clusters, paths) persist in localStorage
+
 
 ### 📸 Screenshot Export
   
