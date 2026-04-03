@@ -615,8 +615,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('ss-cancel')?.addEventListener('click', () => {
             document.getElementById('screenshot-modal').style.display = 'none';
         });
-        document.getElementById('ss-capture-full')?.addEventListener('click', () => takeScreenshot(false));
-        document.getElementById('ss-capture-cam')?.addEventListener('click',  () => takeScreenshot(true));
+        // View toggle (Full Map / Camera View)
+        let _ssCameraView = false;
+        const _ssToggleFull = document.getElementById('ss-toggle-full');
+        const _ssToggleCam  = document.getElementById('ss-toggle-cam');
+        const _setSSToggle = (camView) => {
+            _ssCameraView = camView;
+            if (_ssToggleFull) {
+                _ssToggleFull.style.background = camView ? 'transparent' : 'color-mix(in srgb,var(--acc),transparent 80%)';
+                _ssToggleFull.style.color = camView ? 'var(--muted)' : 'var(--acc)';
+            }
+            if (_ssToggleCam) {
+                _ssToggleCam.style.background = camView ? 'color-mix(in srgb,var(--acc),transparent 80%)' : 'transparent';
+                _ssToggleCam.style.color = camView ? 'var(--acc)' : 'var(--muted)';
+            }
+        };
+        _ssToggleFull?.addEventListener('click', () => _setSSToggle(false));
+        _ssToggleCam?.addEventListener('click',  () => _setSSToggle(true));
+        document.getElementById('ss-save')?.addEventListener('click', () => takeScreenshot(_ssCameraView));
 
         // Remove old internal map listeners
         // mapEngine.map.on('globebtnclick', toggleGlobe);
@@ -725,12 +741,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (val) processQSOs(currentQSOs, false); // build paths lazily on first enable
                 if (globeVisible && globeInstance) {
                     if (val) {
-                        showGlobeArcLoading();
+                        if (currentQSOs.length) showGlobeArcLoading();
                         requestAnimationFrame(() => requestAnimationFrame(() => updateGlobeArcs()));
                     } else {
                         updateGlobeArcs();
                     }
                 }
+            });
+        }
+
+        const chkPathHover = document.getElementById('chk-path-hover');
+        if (chkPathHover) {
+            chkPathHover.checked = false;
+            chkPathHover.addEventListener('change', (e) => {
+                mapEngine.setPathHoverEnabled(e.target.checked);
             });
         }
 
@@ -744,6 +768,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (globeVisible && globeInstance) updateGlobeDots();
             });
         }
+
+        // Block Visual Options interactions when no log is loaded
+        document.getElementById('visual-options-section')?.addEventListener('click', (e) => {
+            if (currentQSOs.length) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            showTacticalToast('Upload a log first.', 3000);
+        }, true);
 
         document.querySelectorAll('.band-chip').forEach(chip => {
             const band = chip.dataset.band;
@@ -780,7 +812,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const qrzKeyInput = document.getElementById('qrz-key');
         const qrzUserInput = document.getElementById('qrz-user');
-        const qrzPassInput = document.getElementById('qrz-pass');
+
         const corsProxyInput = document.getElementById('cors-proxy');
         const lookupBtn = document.getElementById('lookup-btn');
         const bulkBtn = document.getElementById('bulk-resolve-btn');
@@ -1147,6 +1179,15 @@ function finalizeParsedData(data) {
     document.getElementById('stat-bands').textContent = bCount.size;
     document.getElementById('stat-modes').textContent = mCount.size;
     mapEngine.fitBounds(); processQSOs(data, true); updateLoadingStatus(false);
+
+    // If in globe mode, auto-enable clustering now that a log is loaded
+    if (globeVisible) {
+        const chkClusters = document.getElementById('chk-clusters');
+        if (chkClusters && !chkClusters.checked) {
+            chkClusters.checked = true;
+            chkClusters.dispatchEvent(new Event('change'));
+        }
+    }
 }
 
 // ─── Screenshot Export ───────────────────────────────────────────────────────
@@ -1154,10 +1195,8 @@ function finalizeParsedData(data) {
 async function takeScreenshot(cameraView = false) {
     const modal  = document.getElementById('screenshot-modal');
     const status = document.getElementById('ss-status');
-    const btnFull = document.getElementById('ss-capture-full');
-    const btnCam  = document.getElementById('ss-capture-cam');
-    if (btnFull) btnFull.disabled = true;
-    if (btnCam)  btnCam.disabled  = true;
+    const btnSave = document.getElementById('ss-save');
+    if (btnSave) btnSave.disabled = true;
     status.textContent = 'Rendering…';
 
     const inclCallsign = document.getElementById('ss-callsign')?.checked;
@@ -1195,6 +1234,22 @@ async function takeScreenshot(cameraView = false) {
         const modeCounts = {};
         currentQSOs.forEach(q => { const m = q.MODE||''; if(m) modeCounts[m]=(modeCounts[m]||0)+1; });
         const modesSorted = Object.entries(modeCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+        // ── Pre-load flag images for countries section ───────────────────────
+        const flagImgs = {};
+        if (inclDXCC && dxccSorted.length) {
+            await Promise.all(dxccSorted.map(([c]) => {
+                const iso = DXCC_MAP[c.toUpperCase()];
+                if (!iso) return Promise.resolve();
+                return new Promise(resolve => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload  = () => { flagImgs[c] = img; resolve(); };
+                    img.onerror = () => resolve();
+                    img.src = `https://flagcdn.com/w40/${iso}.png`;
+                });
+            }));
+        }
 
         // ── Shared drawing helpers (used by both 2D and 3D side panel) ──────
         const PAD  = 18;
@@ -1261,7 +1316,34 @@ async function takeScreenshot(cameraView = false) {
             if (inclDXCC && dxccSorted.length) {
                 drawHeading('Countries Worked');
                 const dMax = dxccSorted[0][1];
-                dxccSorted.forEach(([c, n]) => drawBar(c.length > 18 ? c.slice(0,16)+'…' : c, n, dMax, cAcc));
+                dxccSorted.forEach(([c, n]) => {
+                    const flagImg = flagImgs[c];
+                    if (flagImg) {
+                        const FW = 20, FH = 13;
+                        ctx.save();
+                        ctx.beginPath();
+                        if (ctx.roundRect) ctx.roundRect(lxL + PAD, cy + 2, FW, FH, 2); else ctx.rect(lxL + PAD, cy + 2, FW, FH);
+                        ctx.clip();
+                        ctx.drawImage(flagImg, lxL + PAD, cy + 2, FW, FH);
+                        ctx.restore();
+                        const nameX = lxL + PAD + FW + 4;
+                        const nameLabel = c.length > 9 ? c.slice(0, 8) + '…' : c;
+                        ctx.font = `400 9px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted;
+                        ctx.fillText(nameLabel, nameX, cy + 10);
+                        const bx = lxL + PAD + FW + 4 + 48, bmw = PW - PAD * 2 - FW - 4 - 48 - 28;
+                        const bw = Math.max(2, (n / dMax) * bmw);
+                        ctx.fillStyle = cAcc + '33';
+                        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, cy+3, bmw, 10, 2); else ctx.rect(bx,cy+3,bmw,10); ctx.fill();
+                        ctx.fillStyle = cAcc;
+                        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, cy+3, bw, 10, 2); else ctx.rect(bx,cy+3,bw,10); ctx.fill();
+                        ctx.font = `700 9px "JetBrains Mono", monospace`; ctx.fillStyle = cText;
+                        const vw = ctx.measureText(String(n)).width;
+                        ctx.fillText(String(n), lxL + PW - PAD - vw, cy + 10);
+                        cy += LINE;
+                    } else {
+                        drawBar(c.length > 18 ? c.slice(0,16)+'…' : c, n, dMax, cAcc);
+                    }
+                });
                 cy += GAP;
             }
             if (inclModes && modesSorted.length) {
@@ -1272,7 +1354,7 @@ async function takeScreenshot(cameraView = false) {
             }
 
             ctx.font = `400 8px "JetBrains Mono", monospace`; ctx.fillStyle = cMuted + '88';
-            ctx.fillText('Polarlog', lxL + PAD, outH - 8);
+            ctx.fillText('polarplot.net', lxL + PAD, outH - 8);
         };
 
         const download = (canvas) => {
@@ -1396,8 +1478,7 @@ async function takeScreenshot(cameraView = false) {
         console.error('Screenshot failed:', err);
         status.textContent = 'Export failed: ' + err.message;
     } finally {
-        if (btnFull) btnFull.disabled = false;
-        if (btnCam)  btnCam.disabled  = false;
+        if (btnSave) btnSave.disabled = false;
     }
 }
 
@@ -1421,7 +1502,12 @@ function toggleGlobe() {
             chkPaths.checked = false;
             chkPaths.dispatchEvent(new Event('change'));
         }
-        if (chkClusters && !chkClusters.checked) {
+        const chkPathHoverGlobe = document.getElementById('chk-path-hover');
+        if (chkPathHoverGlobe && chkPathHoverGlobe.checked) {
+            chkPathHoverGlobe.checked = false;
+            chkPathHoverGlobe.dispatchEvent(new Event('change'));
+        }
+        if (currentQSOs.length && chkClusters && !chkClusters.checked) {
             chkClusters.checked = true;
             chkClusters.dispatchEvent(new Event('change'));
         }

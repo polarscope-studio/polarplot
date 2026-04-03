@@ -38,6 +38,7 @@ export class MapEngine {
     this.paths = L.layerGroup(); // Initialize hidden by default
     this.standaloneMarkers = L.layerGroup();
     this.pathsVisible = false;
+    this.pathHoverEnabled = false;
 
     this.clustersEnabled = true;
 
@@ -200,6 +201,14 @@ export class MapEngine {
           return;
       }
 
+      // Haversine distance in km
+      const toRad = d => d * Math.PI / 180;
+      const dlat = toRad(end[0] - start[0]);
+      const dlon = toRad(end[1] - start[1]);
+      const a = Math.sin(dlat/2)**2 + Math.cos(toRad(start[0])) * Math.cos(toRad(end[0])) * Math.sin(dlon/2)**2;
+      const distKm = 2 * 6371 * Math.asin(Math.sqrt(a));
+      const distMi = distKm * 0.621371;
+
       const path = L.geodesic([start, end], {
           weight: 1.5,
           opacity: 0.4,
@@ -207,8 +216,30 @@ export class MapEngine {
           steps: 24,
           wrap: true
       });
-      
+
+      const tooltip = document.getElementById('path-distance-tooltip');
+      path.on('mouseover', () => {
+          if (!this.pathHoverEnabled || !tooltip) return;
+          const kmEl = document.getElementById('path-distance-km');
+          const miEl = document.getElementById('path-distance-mi');
+          if (kmEl) kmEl.textContent = distKm.toFixed(0) + ' km';
+          if (miEl) miEl.textContent = '/ ' + distMi.toFixed(0) + ' mi';
+          tooltip.style.display = 'block';
+      });
+      path.on('mousemove', (e) => {
+          if (!this.pathHoverEnabled || !tooltip) return;
+          tooltip.style.left = (e.originalEvent.clientX + 14) + 'px';
+          tooltip.style.top  = (e.originalEvent.clientY - 10) + 'px';
+      });
+      path.on('mouseout', () => {
+          if (tooltip) tooltip.style.display = 'none';
+      });
+
       this.paths.addLayer(path);
+  }
+
+  setPathHoverEnabled(val) {
+      this.pathHoverEnabled = val;
   }
 
   /**

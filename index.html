@@ -703,12 +703,20 @@
           </div>
         </section>
 
-        <section class="controls-section">
+        <section class="controls-section" id="visual-options-section">
           <h2 class="section-title">Visual Options</h2>
           <div class="field-group" style="flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.5rem;">
             <label for="chk-paths" style="margin-bottom: 0; cursor: pointer; color: var(--text);">Contact Paths</label>
             <label class="studio-slider">
                 <input type="checkbox" id="chk-paths">
+                <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="field-group" style="flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.5rem;">
+            <label for="chk-path-hover" style="margin-bottom: 0; cursor: pointer; color: var(--muted); font-size: 0.62rem; padding-left: 12px;">↳ Line Distance Hover</label>
+            <label class="studio-slider">
+                <input type="checkbox" id="chk-path-hover">
                 <span class="slider"></span>
             </label>
           </div>
@@ -819,10 +827,10 @@
             </label>
             <input type="password" id="qrz-key" class="field-input" placeholder="QRZ XML Key (Optional)" autocomplete="off" spellcheck="false">
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <form autocomplete="on" onsubmit="return false;" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
             <div class="field-group">
               <label for="qrz-user">Username</label>
-              <input type="text" id="qrz-user" name="username" class="field-input" placeholder="QRZ User..." autocomplete="username">
+              <input type="text" id="qrz-user" name="qrz-callsign" class="field-input" placeholder="QRZ User..." autocomplete="on">
             </div>
             <div class="field-group">
               <label for="qrz-pass" style="display:flex;align-items:center;gap:6px;">Password
@@ -830,7 +838,7 @@
               </label>
               <input type="password" id="qrz-pass" name="password" class="field-input" placeholder="Optional" autocomplete="current-password">
             </div>
-          </div>
+          </form>
           <div class="field-group" style="margin-top: 8px;">
             <label for="cors-proxy" style="display:flex;align-items:center;justify-content:space-between;">
               <span style="display:flex;align-items:center;gap:5px;">Data Proxy <span class="pwd-info-icon" id="proxy-info-icon">ℹ</span></span>
@@ -1141,6 +1149,12 @@
         attachTooltip('proxy-info-icon', 'proxy-tooltip');
       });
     </script>
+    <!-- Path Distance Tooltip -->
+    <div id="path-distance-tooltip" style="display:none;position:fixed;z-index:99999;pointer-events:none;padding:8px 12px;background:rgba(15,22,36,0.92);border:1px solid color-mix(in srgb,var(--acc),transparent 60%);border-radius:8px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-family:var(--font-mono);font-size:0.75rem;color:var(--text);white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.6);">
+      <span id="path-distance-km" style="color:var(--acc);font-weight:700;"></span>
+      <span id="path-distance-mi" style="color:var(--muted);margin-left:6px;"></span>
+    </div>
+
     <!-- Screenshot Modal -->
     <div id="screenshot-modal" style="display:none;position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);align-items:center;justify-content:center;">
       <div style="background:var(--surf);border:1px solid color-mix(in srgb,var(--acc),transparent 60%);border-radius:14px;padding:28px;width:360px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,0.8),0 0 0 1px color-mix(in srgb,var(--acc),transparent 85%);font-family:'DM Sans',sans-serif;">
@@ -1157,11 +1171,14 @@
           <label class="ss-check-row"><input type="checkbox" id="ss-modes"><span>Mode Breakdown</span></label>
         </div>
         <div style="display:flex;gap:10px;flex-direction:column;">
-          <div style="display:flex;gap:10px;">
-            <button id="ss-capture-full" style="flex:1;padding:9px;background:color-mix(in srgb,var(--acc),transparent 80%);border:1px solid var(--acc);color:var(--acc);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">FULL MAP VIEW</button>
-            <button id="ss-capture-cam" style="flex:1;padding:9px;background:var(--surf2);border:1px solid color-mix(in srgb,var(--acc),transparent 50%);color:var(--text);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CAMERA VIEW</button>
+          <div style="display:flex;border:1px solid var(--brd);border-radius:6px;overflow:hidden;">
+            <button id="ss-toggle-full" style="flex:1;padding:9px;background:color-mix(in srgb,var(--acc),transparent 80%);border:none;border-right:1px solid var(--brd);color:var(--acc);cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">FULL MAP VIEW</button>
+            <button id="ss-toggle-cam" style="flex:1;padding:9px;background:transparent;border:none;color:var(--muted);cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CAMERA VIEW</button>
           </div>
-          <button id="ss-cancel" style="padding:7px;background:transparent;border:1px solid var(--brd);color:var(--muted);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CANCEL</button>
+          <div style="display:flex;gap:10px;">
+            <button id="ss-save" style="flex:1;padding:9px;background:color-mix(in srgb,var(--acc),transparent 80%);border:1px solid var(--acc);color:var(--acc);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">SAVE</button>
+            <button id="ss-cancel" style="flex:1;padding:7px;background:transparent;border:1px solid var(--brd);color:var(--muted);border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;">CANCEL</button>
+          </div>
         </div>
         <p id="ss-status" style="font-size:0.7rem;color:var(--muted);text-align:center;margin:12px 0 0;min-height:1em;"></p>
       </div>
