@@ -10,14 +10,14 @@ Live at **[polarplot.net](https://polarplot.net)**
 
 ## Features
 
-### Log Import
+### 📂 Log Import
 - Drag-and-drop or file-select any standard **ADIF** file (`.adi`, `.adif`)
 - Parses in a **dedicated Web Worker** — the UI never freezes, even on logs with thousands of QSOs
 - Chunked streaming parse with live progress indicator
 - Compatible with all major logging software: **WSJTX**, **WSJT-X**, **Log4OM**, **HAMRS**, **JS8Call**, **DXKeeper**, and any other ADIF-compliant exporter
 - Optional **QRZ Logbook** import — pull your entire online logbook directly via the QRZ API
 
-### 2D Map
+### 🗺️ 2D Map
 - **Interactive Leaflet map** with five switchable base layers:
   - Dark Matter (CartoDB) — clean tactical dark theme
   - Arctic White (CartoDB) — high contrast light theme
@@ -31,7 +31,7 @@ Live at **[polarplot.net](https://polarplot.net)**
 - Animated **home beacon** that scales with zoom level
 - `preferCanvas: true` for hardware-accelerated marker rendering
 
-### 3D Globe
+### 🌍 3D Globe
 - Powered by **Globe.gl** (Three.js WebGL)
 - Switch between **Day** (Blue Marble NASA texture) and **Night** (city lights texture) views
 - **Contact arcs** — animated geodesic lines flying from your QTH to every worked station
@@ -39,40 +39,40 @@ Live at **[polarplot.net](https://polarplot.net)**
 - Smooth camera controls with inertia and damping
 - Click any contact dot or arc for the full station popup
 
-### Contact Cards & Popups
+### 📋 Contact Cards & Popups
 - Every callsign is a **clickable QRZ hyperlink** — one click opens the station's QRZ page in a new tab
 - Shows: callsign, country + flag, band, mode, grid square, last QSO date/time, total QSO count
 - **Full QSO history** panel — see every individual contact with that station, sorted by date
 - Popups work identically in 2D map view, 3D globe view, and the stats panel
 
-### Band Filtering
+### 📡 Band Filtering
 - Per-band toggle chips for every amateur band (160m → 70cm and beyond)
 - Each band has a unique accent color carried through markers, paths, arcs, and popups
 - Band filter state persists across sessions via localStorage
 
-### Stats Panel — All Contacts
+### 📊 Stats Panel — All Contacts
 - Sortable table of every unique callsign worked
 - Columns: callsign, country (flag + name), band, mode, last QSO date, QSO count
 - Full-text search across callsigns, countries, bands, and modes
 - Country names resolved from callsign prefix when not present in the log (covers WSJTX-style logs)
 
-### QRZ Integration
+### 🔍 QRZ Integration
 - **RESOLVE MISSING / LOCATION DATA** — for contacts where your ADIF has no coordinates or grid square, Polarplot batch-queries QRZ to fill in lat/lon and country
 - Falls back gracefully: QRZ lat/lon → grid square decode → skips if still unresolvable
 - Session key caching — logs in once, reuses the session key for the entire batch
 - CORS proxy support for environments that need it
 
-### Location Input
+### 📍 Location Input
 - Set home QTH by **Maidenhead grid square** or **manual lat/lon**
 - Auto-resolves your own callsign via QRZ to pre-fill home coordinates
 - Home location persists in localStorage
 
-### Themes & Customization
+### 🎨 Themes & Customization
 - Multiple UI color themes selectable from the settings panel
 - Accent color propagates to markers, paths, arcs, cluster icons, and popup highlights
 - All preferences (theme, bands, units, map layer, clusters, paths) persist in localStorage
 
-### Screenshot Export
+### 📸 Screenshot Export
 - Capture the current 2D map **or** 3D globe as a PNG
 - Globe animation is paused and locked before capture — no motion blur or drift
 - Options: full current view, or snap globe to your home QTH before capture
@@ -94,36 +94,36 @@ Live at **[polarplot.net](https://polarplot.net)**
 | Screenshots | html2canvas + native WebGL canvas |
 | Persistence | localStorage (no backend, no account required) |
 
-### ADIF Parser
+### 🔧 ADIF Parser
 - Handles both spec-compliant multi-line ADIF and single-line WSJTX-style records
 - Regex field extraction: `<FIELD:length>value` with optional type specifier
 - Strips `<EOH>` headers, splits on `<EOR>` boundaries
 - Runs in a dedicated `Worker` thread — parse of 10,000+ QSOs completes without blocking the UI
 
-### Coordinate Resolution Pipeline
+### 📌 Coordinate Resolution Pipeline
 1. `LAT` / `LON` fields in ADIF (decimal or NSEW degree-minute format)
 2. `GRIDSQUARE` → Maidenhead decode (4-char or 6-char precision)
 3. QRZ XML lookup (requires API key)
 4. Skip — contact plotted only when coordinates are available
 
-### Great Circle Paths
+### 〰️ Great Circle Paths
 - Implemented via **Leaflet.Geodesic** — true great circle arcs, not straight lines
 - Paths built once on first enable, then cached — zoom, cluster toggles, and band filters do not trigger a rebuild
 - `_pathsDirty` flag controls when a full rebuild is needed (new log, new home location, resolve complete)
 - `mapEngine.clear()` clears markers only; `mapEngine.clearPaths()` is called separately when dirty
 
-### Globe Arcs
+### 🌐 Globe Arcs
 - Three.js `QuadraticBezierCurve3` via Globe.gl arc layer
 - Arc color inherits band color from the contact's band field
 - Arcs rebuild independently from marker updates — cluster zoom-in does not trigger arc rebuild
 - FPV mode repositions camera to home QTH coordinates at low altitude
 
-### Clustering
+### 🔵 Clustering
 - `L.markerClusterGroup` with `chunkedLoading: true` and custom styled cluster icons
 - Parallel layer system: cluster markers (SVG divIcon) for clustered mode, CircleMarkers for standalone mode
 - Switching modes swaps layers without rebuilding marker data
 
-### DXCC / Flag Resolution
+### 🏳️ DXCC / Flag Resolution
 - ~430-entry prefix lookup table mapping callsign prefixes → ISO 3166-1 alpha-2 codes
 - Covers standard prefixes, special event prefixes, and common exceptions
 - Country name fallback via `ISO_TO_NAME` map when ADIF `COUNTRY` field is absent
