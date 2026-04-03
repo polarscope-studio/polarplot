@@ -589,6 +589,45 @@ document.addEventListener('DOMContentLoaded', async () => {
             picker?.classList.toggle('visible');
         });
 
+        // Sidebar collapse / expand
+        const sidebarEl     = document.getElementById('sidebar');
+        const collapseBtn   = document.getElementById('sidebar-collapse-btn');
+        const expandTab     = document.getElementById('sidebar-expand-tab');
+        const toggleSidebar = (collapsed) => {
+            sidebarEl.classList.toggle('collapsed', collapsed);
+            expandTab.classList.toggle('visible', collapsed);
+            document.body.classList.toggle('sidebar-collapsed', collapsed);
+
+            if (!globeVisible) {
+                // Pump invalidateSize throughout the CSS transition so tiles load progressively
+                const mapInstance = mapEngine?.map;
+                if (mapInstance) {
+                    const steps = 6;
+                    for (let i = 1; i <= steps; i++) {
+                        setTimeout(() => {
+                            mapInstance.invalidateSize({ animate: false, pan: false });
+                            if (i === steps) mapInstance.fire('moveend');
+                        }, Math.round((300 / steps) * i));
+                    }
+                }
+            } else if (globeInstance) {
+                // Drive globe resize every frame for the full transition duration
+                const globeEl = document.getElementById('globe-container');
+                const duration = 320;
+                const start = performance.now();
+                const tick = (now) => {
+                    if (!globeEl || !globeInstance) return;
+                    globeInstance.width(globeEl.offsetWidth).height(globeEl.offsetHeight);
+                    globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
+                    if (now - start < duration) requestAnimationFrame(tick);
+                    else forceGlobeRender();
+                };
+                requestAnimationFrame(tick);
+            }
+        };
+        collapseBtn?.addEventListener('click', () => toggleSidebar(true));
+        expandTab?.addEventListener('click',   () => toggleSidebar(false));
+
         document.getElementById('ui-btn-globe')?.addEventListener('click', () => {
             toggleGlobe();
         });

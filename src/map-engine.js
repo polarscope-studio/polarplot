@@ -88,7 +88,7 @@ export class MapEngine {
 
       this.homeMarker = L.marker(this.homeLocation, { 
           icon: icon,
-          zIndexOffset: 1000 
+          zIndexOffset: 9999
       }).addTo(this.map);
 
       this.homeMarker.on('click', () => {

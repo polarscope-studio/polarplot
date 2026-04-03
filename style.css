@@ -40,16 +40,42 @@ body { font-family: var(--font-main); color: var(--text); display: flex; }
 * { scrollbar-width: thin; scrollbar-color: var(--brd) var(--bg); }
 
 #app { display: flex; width: 100%; height: 100vh; }
-.sidebar { width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 1.25rem; z-index: 100; overflow-y: auto; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
-#map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; transform: translateZ(0); }
+.sidebar { position: relative; width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 0; z-index: 100; overflow: visible; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); transition: width 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease; }
+.sidebar.collapsed { width: 0; opacity: 0; overflow: hidden; border-right: none; }
+.sidebar-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1.25rem; display: flex; flex-direction: column; }
+#map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; transform: translateZ(0); transition: flex 0.3s cubic-bezier(0.4,0,0.2,1); }
+
+/* Sidebar collapse tab — glued to the right edge of the sidebar */
+#sidebar-collapse-btn {
+  position: absolute; top: 50%; right: -18px; transform: translateY(-50%);
+  width: 18px; height: 52px; border-radius: 0 7px 7px 0;
+  background: var(--surf); border: 1px solid var(--brd); border-left: none;
+  color: var(--muted); font-size: 1rem; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  z-index: 200; transition: color 0.2s, border-color 0.2s;
+}
+#sidebar-collapse-btn:hover { color: var(--acc); border-color: var(--acc); }
+
+/* Expand tab — fixed, shown only when sidebar is collapsed */
+#sidebar-expand-tab {
+  position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 52px; border-radius: 0 7px 7px 0;
+  background: var(--surf); border: 1px solid var(--brd); border-left: none;
+  color: var(--muted); font-size: 1rem; line-height: 1;
+  cursor: pointer; display: none; align-items: center; justify-content: center;
+  z-index: 200; transition: color 0.2s, border-color 0.2s;
+}
+#sidebar-expand-tab:hover { color: var(--acc); border-color: var(--acc); }
+#sidebar-expand-tab.visible { display: flex; }
+body.sidebar-collapsed #sidebar-collapse-btn { display: none; }
 
 /* Station & History Panels (Centered Glassy Modals) */
 .station-panel {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
-  width: 550px; max-width: 95vw; background: rgba(13, 18, 32, 0.85); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
-  border: 1px solid var(--brd); border-radius: 20px; z-index: 2500; display: flex; flex-direction: column;
+  width: 550px; max-width: 95vw; background: rgba(13, 18, 32, 0.45); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; z-index: 2500; display: flex; flex-direction: column;
   opacity: 0; pointer-events: none; transition: opacity 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 40px 100px rgba(0,0,0,0.8);
+  box-shadow: 0 40px 100px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
   will-change: transform, opacity;
 }
 .station-panel.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
@@ -195,9 +221,9 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   animation: beacon-pulse 2s infinite;
 }
 @keyframes beacon-pulse {
-  0%   { transform: scale(1);    opacity: 1; }
-  50%  { transform: scale(1.8);  opacity: 0.3; }
-  100% { transform: scale(1);    opacity: 1; }
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.8); }
+  100% { transform: scale(1); }
 }
 
 /* Leaflet UI Overrides (Total Eclipse) */
@@ -282,7 +308,8 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 }
 .map-ctrl-group.top-right { top: 10px; right: 10px; }
 .map-ctrl-group.bottom-right { bottom: 30px; right: 10px; }
-.map-ctrl-group.top-left { top: 10px; left: calc(var(--sidebar-width) + 10px); flex-direction: row; }
+.map-ctrl-group.top-left { top: 10px; left: calc(var(--sidebar-width) + 10px); flex-direction: row; transition: left 0.3s cubic-bezier(0.4,0,0.2,1); }
+body.sidebar-collapsed .map-ctrl-group.top-left { left: 30px; }
 .map-ctrl-group.top-left .map-ctrl-btn { border-bottom: none; border-right: 1px solid var(--brd); width: 32px; font-size: 0.68rem; letter-spacing: 0.04em; }
 .map-ctrl-group.top-left .map-ctrl-btn:last-child { border-right: none; }
 
