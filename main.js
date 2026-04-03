@@ -1059,7 +1059,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         mapEngine.map.on('popupopen', (e) => {
             const btn = e.popup._container.querySelector('.btn-show-history');
-            if (btn) btn.onclick = () => { const data = e.popup._source.options?.stationData; if (data) showHistoryPanel(data); };
+            if (btn) btn.onclick = () => {
+                const data = e.popup._source?.options?.stationData || e.popup._stationData;
+                if (data) showHistoryPanel(data);
+            };
         });
 
         document.getElementById('search-call')?.addEventListener('input', (e) => { searchQuery = e.target.value.toUpperCase(); processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
@@ -1710,13 +1713,25 @@ function initGlobe(el) {
             if (cell !== _lastCellDeg) { _lastCellDeg = cell; updateGlobeDots(); }
         }, 200);
 
-        // Fade out popup when its contact rotates behind the globe
+        // Track + fade popup as globe orbits
         if (_globePopupGeoPoint) {
             const popup = document.getElementById('globe-popup');
             if (popup && popup.style.display !== 'none') {
                 if (!_isGlobePointVisible(_globePopupGeoPoint.lat, _globePopupGeoPoint.lng)) {
                     popup.style.opacity = '0';
                     setTimeout(() => { hideGlobePopup(); }, 260);
+                } else {
+                    const pos = _globeProject(_globePopupGeoPoint.lat, _globePopupGeoPoint.lng);
+                    if (pos) {
+                        const W = 240, pad = 12;
+                        let x = pos.x + 14;
+                        let y = pos.y - 20;
+                        if (x + W > window.innerWidth - pad) x = pos.x - W - 14;
+                        if (y + 180 > window.innerHeight - pad) y = window.innerHeight - 180 - pad;
+                        if (y < pad) y = pad;
+                        popup.style.left = x + 'px';
+                        popup.style.top  = y + 'px';
+                    }
                 }
             }
         }
@@ -1902,6 +1917,43 @@ function updateGlobeData() {
     _rebuildGlobeContacts();
     updateGlobeDots();
     updateGlobeArcs();
+}
+
+// Projects a globe lat/lng to screen coordinates using the camera matrices.
+// Uses globe.gl's own polar2Cartesian convention:
+//   phi   = PI * (0.5 - lat/180)
+//   theta = 2*PI * (0.25 - lng/360)
+//   x = R*sin(phi)*cos(theta), y = R*cos(phi), z = R*sin(phi)*sin(theta)
+function _globeProject(lat, lng) {
+    if (!globeInstance) return null;
+    // Use built-in if available (globe.gl >= 2.26)
+    if (typeof globeInstance.getScreenCoords === 'function') {
+        const s = globeInstance.getScreenCoords(lat, lng, 0);
+        if (!s) return null;
+        const rect = globeInstance.renderer().domElement.getBoundingClientRect();
+        return { x: s.x + rect.left, y: s.y + rect.top };
+    }
+    const R = 100;
+    const phi   = Math.PI * (0.5 - lat / 180);
+    const theta = 2 * Math.PI * (0.25 - lng / 360);
+    const x3 = R * Math.sin(phi) * Math.cos(theta);
+    const y3 = R * Math.cos(phi);
+    const z3 = R * Math.sin(phi) * Math.sin(theta);
+    const v = globeInstance.camera().matrixWorldInverse.elements;
+    const p = globeInstance.camera().projectionMatrix.elements;
+    const cx = v[0]*x3 + v[4]*y3 + v[8]*z3  + v[12];
+    const cy = v[1]*x3 + v[5]*y3 + v[9]*z3  + v[13];
+    const cz = v[2]*x3 + v[6]*y3 + v[10]*z3 + v[14];
+    const cw = v[3]*x3 + v[7]*y3 + v[11]*z3 + v[15];
+    const clipX = p[0]*cx + p[4]*cy + p[8]*cz  + p[12]*cw;
+    const clipY = p[1]*cx + p[5]*cy + p[9]*cz  + p[13]*cw;
+    const clipW = p[3]*cx + p[7]*cy + p[11]*cz + p[15]*cw;
+    if (Math.abs(clipW) < 1e-10) return null;
+    const rect = globeInstance.renderer().domElement.getBoundingClientRect();
+    return {
+        x: (clipX / clipW + 1) / 2 * rect.width  + rect.left,
+        y: (-clipY / clipW + 1) / 2 * rect.height + rect.top
+    };
 }
 
 // ─── Globe Popup ─────────────────────────────────────────────────────────────
