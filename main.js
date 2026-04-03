@@ -730,6 +730,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const chkPaths = document.getElementById('chk-paths');
         const chkClusters = document.getElementById('chk-clusters');
 
+        const chkPathHover = document.getElementById('chk-path-hover');
+
         if (chkPaths) {
             chkPaths.checked = false;
             mapEngine.setPathsVisible(false);
@@ -747,16 +749,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                         updateGlobeArcs();
                     }
                 }
+                // Keep Line Distance Hover locked to Contact Paths state
+                if (chkPathHover) {
+                    chkPathHover.disabled = !val;
+                    if (!val && chkPathHover.checked) {
+                        chkPathHover.checked = false;
+                        chkPathHover.dispatchEvent(new Event('change'));
+                    }
+                }
             });
         }
 
-        const chkPathHover = document.getElementById('chk-path-hover');
         if (chkPathHover) {
             chkPathHover.checked = false;
+            chkPathHover.disabled = true; // disabled until Contact Paths is on
             chkPathHover.addEventListener('change', (e) => {
                 mapEngine.setPathHoverEnabled(e.target.checked);
             });
         }
+
+        document.getElementById('path-hover-row')?.addEventListener('click', () => {
+            if (chkPathHover?.disabled) {
+                showTacticalToast('Turn on Contact Paths first.', 3000);
+            }
+        });
 
         if (chkClusters) {
             chkClusters.checked = false;
@@ -765,7 +781,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             chkClusters.addEventListener('change', (e) => {
                 localStorage.setItem('polarlog_show_clusters', e.target.checked);
                 mapEngine.setClustersEnabled(e.target.checked);
-                if (globeVisible && globeInstance) updateGlobeDots();
+                if (globeVisible && globeInstance) {
+                    globeInstance.resumeAnimation();
+                    updateGlobeDots();
+                }
             });
         }
 
@@ -1618,7 +1637,42 @@ function initGlobe(el) {
         .onPointClick((point, event) => {
             if (!point.isHome) showGlobePopup(point, event.clientX, event.clientY);
         })
-        .onGlobeClick(() => { if (Date.now() - _globePopupTs > 120) hideGlobePopup(); });
+        .onGlobeClick(() => { if (Date.now() - _globePopupTs > 120) hideGlobePopup(); })
+        .onArcClick((arc, event) => {
+            if (!arc) return;
+            const contact = _globeContactList.find(c => c.call === arc.label);
+            if (contact) showGlobePopup(
+                { ...contact, clusterSize: 1, qsoData: contact.qsos },
+                event.clientX, event.clientY
+            );
+        })
+        .onArcHover((arc) => {
+            const tooltip = document.getElementById('path-distance-tooltip');
+            if (!tooltip) return;
+            if (!document.getElementById('chk-path-hover')?.checked) return;
+            if (arc) {
+                const toRad = d => d * Math.PI / 180;
+                const dlat = toRad(arc.endLat - arc.startLat);
+                const dlon = toRad(arc.endLng - arc.startLng);
+                const a = Math.sin(dlat/2)**2 + Math.cos(toRad(arc.startLat)) * Math.cos(toRad(arc.endLat)) * Math.sin(dlon/2)**2;
+                const distKm = 2 * 6371 * Math.asin(Math.sqrt(a));
+                const kmEl = document.getElementById('path-distance-km');
+                const miEl = document.getElementById('path-distance-mi');
+                if (kmEl) kmEl.textContent = distKm.toFixed(0) + ' km';
+                if (miEl) miEl.textContent = '/ ' + (distKm * 0.621371).toFixed(0) + ' mi';
+                tooltip.style.display = 'block';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+
+    el.addEventListener('mousemove', (e) => {
+        const tooltip = document.getElementById('path-distance-tooltip');
+        if (tooltip && tooltip.style.display === 'block') {
+            tooltip.style.left = (e.clientX + 14) + 'px';
+            tooltip.style.top  = (e.clientY - 10) + 'px';
+        }
+    });
 
     globeInstance.controls().enableDamping   = true;
     globeInstance.controls().dampingFactor   = 0.08;
@@ -1833,12 +1887,13 @@ function updateGlobeArcs() {
             .arcStartLat(d => d.startLat).arcStartLng(d => d.startLng)
             .arcEndLat(d => d.endLat).arcEndLng(d => d.endLng)
             .arcColor(d => d.color)
-            .arcAltitudeAutoScale(0.32).arcStroke(0.35).arcResolution(16)
+            .arcAltitudeAutoScale(0.32).arcStroke(0.7).arcResolution(16)
             .arcDashLength(1).arcDashGap(0).arcDashAnimateTime(0)
             .arcLabel(d => d.label);
     } else {
         globeInstance.arcsData([]);
     }
+    requestAnimationFrame(() => requestAnimationFrame(() => globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera())));
 }
 
 function updateGlobeData() {

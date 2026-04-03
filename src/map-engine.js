@@ -181,14 +181,14 @@ export class MapEngine {
 
     // Draw Great Circle Path — only compute geometry when paths are actually visible
     if (this.homeLocation && this.pathsVisible) {
-        this.addPath(this.homeLocation, [lat, lon], color);
+        this.addPath(this.homeLocation, [lat, lon], color, Array.isArray(qso) ? qso : [qso]);
     }
   }
 
   /**
    * Add a Geodesic (Great Circle) path between two points
    */
-  addPath(start, end, color = '#38bdf8') {
+  addPath(start, end, color = '#38bdf8', stationData = null) {
       if (!L.geodesic) {
           console.warn('Leaflet.Geodesic not loaded, falling back to polyline');
           const path = L.polyline([start, end], {
@@ -234,6 +234,13 @@ export class MapEngine {
       path.on('mouseout', () => {
           if (tooltip) tooltip.style.display = 'none';
       });
+
+      if (stationData) {
+          path.on('click', () => {
+              if (tooltip) tooltip.style.display = 'none';
+              this.map.fire('stationclick', { data: stationData });
+          });
+      }
 
       this.paths.addLayer(path);
   }
