@@ -233,7 +233,7 @@ To use coordinate resolution and logbook import:
 
 1. Get a QRZ XML Data subscription at [qrz.com](https://www.qrz.com/page/xml_data.html)
 2. Open Polarplot settings → enter your QRZ username, password, and API key
-3. If running locally without a backend, set a CORS proxy (e.g. `https://cors-anywhere.herokuapp.com/`)
+3. A CORS proxy is pre-configured (`corsproxy.io`) — no setup needed for most users
 
 ---
 
