@@ -405,7 +405,7 @@
           <div class="splash-pane active" id="splash-about">
             <h3>Welcome to Polarplot</h3>
             <p>Polarplot is a real-time amateur radio QSO visualizer. Drop in your ADIF log file and watch your contacts light up on an interactive world map with geodesic great-circle paths, country flags, clustering, and full station bio lookups.</p>
-            <p>Set your home station callsign and grid square, then import any ADIF file — from QRZ, WSJT-X, N1MM, or any other logging software. Polarplot automatically decodes callsign prefixes, Maidenhead grids, and coordinates to place every station on the map.</p>
+            <p>Set your home station callsign and grid square, then import any ADIF file — from QRZ, WSJT-X, N1MM, or any other logging software. Polarplot decodes callsign prefixes, Maidenhead grids, and embedded coordinates. For logs without location data, use QRZ Resolve to pull full station details from QRZ. This is not magic and it cannot pull data that does not exist.</p>
             <h3 style="margin-top:8px;">How to Get Started</h3>
             <p style="margin-bottom:6px;">1. Enter your callsign and grid square (or GPS coordinates) in the sidebar.</p>
             <p style="margin-bottom:6px;">2. Drag and drop your <strong style="color:#f0f4ff;">.adi</strong> or <strong style="color:#f0f4ff;">.adif</strong> file onto the drop zone.</p>
@@ -449,6 +449,22 @@
                 <strong>⚡ Fast Parsing</strong>
                 <span>Web Worker streams large ADIF files without blocking the UI.</span>
               </div>
+              <div class="splash-feature">
+                <strong>📸 Screenshot</strong>
+                <span>Export a high-resolution image of your current map or globe view.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>🛰 Satellite Imagery</strong>
+                <span>Switch to extremely high quality satellite tile overlay for a real-world map view.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>〰 Contact Paths</strong>
+                <span>Toggle geodesic great-circle lines from your QTH to every logged contact.</span>
+              </div>
+              <div class="splash-feature">
+                <strong>🔎 Callsign & Country Search</strong>
+                <span>Filter the map live by callsign prefix or DXCC country to zero in on specific contacts.</span>
+              </div>
             </div>
           </div>
 
@@ -469,6 +485,8 @@
             <div class="splash-ctrl-row"><span class="splash-key">Callsign Search</span><span>Filter map by callsign prefix</span></div>
             <div class="splash-ctrl-row"><span class="splash-key">Country Filter</span><span>Show only a specific DXCC entity</span></div>
             <div class="splash-ctrl-row"><span class="splash-key">Band Chips</span><span>Toggle individual band visibility</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">Date Range Filter</span><span>Filter contacts shown on map between two dates</span></div>
+            <div class="splash-ctrl-row"><span class="splash-key">‹ Collapse Tab</span><span>Collapse or expand the sidebar for a full map view</span></div>
           </div>
 
           <!-- Links -->
@@ -693,8 +711,39 @@
         </div>
 
         <div class="splash-footer">
-          <span class="splash-footer-note">POLARPLOT // <a href="https://www.qrz.com/db/M7PXZ" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">M7PXZ</a></span>
+          <span class="splash-footer-note">POLARPLOT <button onclick="document.getElementById('license-modal').style.display='flex'" style="background:none;border:none;cursor:pointer;font-size:0.7rem;color:rgba(255,255,255,0.25);font-family:'JetBrains Mono',monospace;letter-spacing:0.05em;padding:0;transition:color 0.2s;" onmouseover="this.style.color='rgba(255,255,255,0.6)'" onmouseout="this.style.color='rgba(255,255,255,0.25)'">⚖ GPL v3</button> // CREATED & DESIGNED <a href="https://www.qrz.com/db/M7PXZ" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">M7PXZ</a></span>
           <button class="splash-enter" onclick="closeSplash()">ENTER ›</button>
+        </div>
+
+        <!-- License Modal -->
+        <div id="license-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);" onclick="if(event.target===this)this.style.display='none'">
+          <div style="background:rgba(13,18,32,0.97);border:1px solid rgba(56,189,248,0.2);border-radius:12px;padding:28px 32px;max-width:640px;width:90%;max-height:75vh;display:flex;flex-direction:column;gap:16px;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;letter-spacing:2px;color:#38bdf8;">⚖ LICENSE</span>
+              <button onclick="document.getElementById('license-modal').style.display='none'" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.4);font-size:1.1rem;line-height:1;padding:0;transition:color 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,0.4)'">✕</button>
+            </div>
+            <div style="overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:rgba(255,255,255,0.6);line-height:1.8;white-space:pre-wrap;">Polarplot — Ham Radio QSO Visualizer
+Copyright (C) 2026 Polarscope Studio
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You are free to:
+  • Use — run the program for any purpose
+  • Study — access and read the source code
+  • Share — copy and redistribute the software
+  • Modify — change the code and distribute your modifications
+
+Under these conditions:
+  • Any modified version must also be released under GPL v3
+  • You must include the original copyright notice
+  • You must make the source code available
+
+Full license text: https://www.gnu.org/licenses/gpl-3.0.html
+Contact: m7pxzqrz@gmail.com
+Website: https://polarplot.net</div>
+          </div>
         </div>
       </div>
     </div>
