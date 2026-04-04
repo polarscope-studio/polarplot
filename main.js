@@ -900,7 +900,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             qrzUserInput.addEventListener('input', (e) => localStorage.setItem('polarlog_qrz_user', e.target.value));
         }
         if (corsProxyInput) {
-            corsProxyInput.value = localStorage.getItem('polarlog_cors_proxy') || 'https://corsproxy.io/?';
+            const savedProxy = localStorage.getItem('polarlog_cors_proxy');
+corsProxyInput.value = (savedProxy && savedProxy !== 'https://cors-anywhere.herokuapp.com/') ? savedProxy : 'https://corsproxy.io/?';
             corsProxyInput.addEventListener('input', (e) => localStorage.setItem('polarlog_cors_proxy', e.target.value));
         }
         
