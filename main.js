@@ -963,7 +963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (currentQSOs.length === 0) { showTacticalToast('Import a log first.', 3000); return; }
             btn.disabled = true;
             btn.textContent = 'INITIALIZING...';
-            const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.LON);
+            const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.LON || q._fromGrid);
             const user = document.getElementById('qrz-user').value, pass = document.getElementById('qrz-pass').value, key = document.getElementById('qrz-key').value, proxy = document.getElementById('cors-proxy').value;
             if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; showTacticalToast('QRZ credentials required. Enter your username, password or API key.', 4000); return; }
             if (!forceAll && missing.length === 0) {
@@ -992,6 +992,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (!entry) continue;
                     qso.LAT = entry.lat;
                     qso.LON = entry.lon;
+                    qso._fromGrid = false;
                     if (entry.grid)    qso.GRIDSQUARE = entry.grid;
                     if (entry.country) qso.COUNTRY    = entry.country;
                     if (entry.dxcc)    qso.DXCC       = entry.dxcc;
@@ -1010,12 +1011,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
             // ── Phase 3: XML lookup for remaining unresolved contacts ───────
-            const stillMissing = missing.filter(q => !q.LAT || !q.LON);
+            const stillMissing = missing.filter(q => !q.LAT || !q.LON || q._fromGrid);
             let resolvedCount = logbookMatched, totalToResolve = stillMissing.length, processedCount = 0;
             let lastRedraw = Date.now();
 
             if (stillMissing.length > 0) {
-                stats.textContent = `Logbook: ${logbookMatched} matched. XML lookup: 0 / ${stillMissing.length}...`;
+                stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML lookup: 0 / ${stillMissing.length}...`;
                 let idx = 0, batchSize = 5, firstError = null;
                 const processPulse = async () => {
                     while (idx < totalToResolve) {
@@ -1027,13 +1028,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             if (data && data.lat && data.lon) {
                                 qso.LAT = data.lat;
                                 qso.LON = data.lon;
+                                qso._fromGrid = false;
                                 if (data.grid)    qso.GRIDSQUARE = data.grid;
                                 if (data.dxcc)    qso.DXCC       = data.dxcc;
                                 if (data.country) qso.COUNTRY    = data.country;
                                 resolvedCount++;
                             }
                             const percent = 15 + Math.floor((processedCount / totalToResolve) * 85);
-                            stats.textContent = `Logbook: ${logbookMatched} · XML: ${processedCount}/${stillMissing.length} (${resolvedCount} total resolved)`;
+                            stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML: ${processedCount}/${stillMissing.length} (${resolvedCount} needed fixing)`;
                             updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, percent);
                             if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
                         } catch (e) {
@@ -1044,7 +1046,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 };
                 await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
-                if (firstError) stats.textContent += ` — Error: ${firstError.slice(0, 80)}`;
             }
 
             isResolving = false; updateLoadingStatus(false);

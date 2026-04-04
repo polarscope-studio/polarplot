@@ -42,7 +42,7 @@ function parseRecord(record) {
     // Derive LAT/LON from GRIDSQUARE when not provided (WSJT-X, N1MM, etc.)
     if ((!qso.LAT || !qso.LON) && qso.GRIDSQUARE) {
         const coords = gridToCoords(qso.GRIDSQUARE);
-        if (coords) { qso.LAT = coords.lat; qso.LON = coords.lon; }
+        if (coords) { qso.LAT = coords.lat; qso.LON = coords.lon; qso._fromGrid = true; }
     }
 
     return qso;
