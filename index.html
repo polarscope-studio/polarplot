@@ -966,8 +966,9 @@ Website: https://polarplot.net</div>
           <div class="field-group" style="margin-top: 8px;">
             <label for="cors-proxy" style="display:flex;align-items:center;justify-content:space-between;">
               <span style="display:flex;align-items:center;gap:5px;">Data Proxy <span class="pwd-info-icon" id="proxy-info-icon">ℹ</span></span>
+              <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" rel="noopener" style="font-size:0.68rem;color:var(--acc);font-weight:600;text-decoration:none;opacity:0.8;" title="Click to activate the demo proxy in a new tab">Activate Proxy ↗</a>
             </label>
-            <input type="text" id="cors-proxy" class="field-input" placeholder="CORS Proxy URL (optional)..." value="https://corsproxy.io/?">
+            <input type="text" id="cors-proxy" class="field-input" placeholder="CORS Proxy URL (optional)..." value="https://cors-anywhere.herokuapp.com/">
           </div>
           <div class="field-group" style="margin-top: 8px;">
             <label style="display:flex;align-items:center;justify-content:space-between;">
@@ -1186,8 +1187,8 @@ Website: https://polarplot.net</div>
     <!-- Data Proxy tooltip -->
     <div id="proxy-tooltip" style="display:none;position:fixed;width:260px;background:rgba(10,12,22,0.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:12px 14px;font-size:0.72rem;font-weight:400;font-family:'DM Sans',sans-serif;color:rgba(255,255,255,0.6);line-height:1.65;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:99999;pointer-events:none;white-space:normal;text-transform:none;letter-spacing:0;">
       A <strong>CORS proxy</strong> is needed because QRZ's servers block direct browser requests. The proxy forwards them server-side to get around this.<br><br>
-      <strong>✓ Default:</strong> Polarplot uses <em>corsproxy.io</em> out of the box — no activation needed for most users.<br><br>
-      <strong>✗ Won't work when:</strong> corsproxy.io is down or your network blocks it. In that case, try a different proxy URL.<br><br>
+      <strong>✓ Works when:</strong> You visit <em>Activate Proxy ↗</em> first and click "Request temporary access" in that tab — access lasts a few hours.<br><br>
+      <strong>✗ Won't work when:</strong> You haven't activated it, the demo quota is full, or you're on a network that blocks it.<br><br>
       <strong>Better alternative:</strong> Export your QRZ logbook as ADIF and drop it into the <em>QRZ Logbook Reference</em> box below — no proxy needed at all.
     </div>
 

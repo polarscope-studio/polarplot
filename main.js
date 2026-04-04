@@ -900,8 +900,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             qrzUserInput.addEventListener('input', (e) => localStorage.setItem('polarlog_qrz_user', e.target.value));
         }
         if (corsProxyInput) {
-            const savedProxy = localStorage.getItem('polarlog_cors_proxy');
-corsProxyInput.value = (savedProxy && savedProxy !== 'https://cors-anywhere.herokuapp.com/') ? savedProxy : 'https://corsproxy.io/?';
+            corsProxyInput.value = localStorage.getItem('polarlog_cors_proxy') || 'https://cors-anywhere.herokuapp.com/';
             corsProxyInput.addEventListener('input', (e) => localStorage.setItem('polarlog_cors_proxy', e.target.value));
         }
         
@@ -945,7 +944,7 @@ corsProxyInput.value = (savedProxy && savedProxy !== 'https://cors-anywhere.hero
                                 localStorage.setItem('polarlog_my_lon', data.lon);
                             }
                         }
-                    } else showTacticalToast('Station not found or QRZ session error. Check your credentials and proxy URL.', 6000);
+                    } else showTacticalToast('Station not found or QRZ session error. If you haven\'t already, activate your CORS proxy using the Activate Proxy button.', 6000);
                 } catch (err) {
                     isResolving = false;
                     updateLoadingStatus(false);
@@ -953,7 +952,7 @@ corsProxyInput.value = (savedProxy && savedProxy !== 'https://cors-anywhere.hero
                     lookupBtn.disabled = false;
                     if (err.message === 'PROXY_BLOCK') {
                         if (window.confirm('PROXY BLOCKED: Activate CORS session?')) window.open(proxy, '_blank');
-                    } else showTacticalToast('Connection failed: ' + err.message + '. Check your proxy URL or try a different one.', 6000);
+                    } else showTacticalToast('Connection failed: ' + err.message + '. Try activating your CORS proxy using the Activate Proxy button.', 6000);
                 }
             };
         }
