@@ -113,6 +113,8 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Falls back gracefully: QRZ lat/lon → grid square decode → skips if still unresolvable
 - Session key caching — logs in once, reuses the session key for the entire batch
 - Dedicated Cloudflare Worker proxy — no activation needed, works out of the box for all users
+- Callsign deduplication — each unique station queried once, result applied to all matching QSOs
+- Portable callsign support — /QRP, /P, /MM and other suffixes stripped before lookup so all variants resolve correctly
 
 
 ---

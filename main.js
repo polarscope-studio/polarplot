@@ -942,6 +942,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 document.getElementById('my-lon').value = data.lon;
                                 localStorage.setItem('polarlog_my_lat', data.lat);
                                 localStorage.setItem('polarlog_my_lon', data.lon);
+                                updateHome();
                             }
                         }
                     } else showTacticalToast('Station not found or QRZ session error. Check your QRZ credentials and try again.', 6000);
