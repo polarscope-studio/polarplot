@@ -378,7 +378,7 @@
 
         <div class="splash-warning" id="splashWarning">
           <span class="splash-warning-icon">ℹ</span>
-          <span>This mainly works with QRZ ADIFs better. You are not required to have an API key — it is optional.</span>
+          <span>This software prioritizes QRZ ADIFs, but other logs will also work. You are not required to have an API key; it is optional.</span>
           <button class="splash-warning-close" onclick="document.getElementById('splashWarning').style.display='none'" title="Dismiss">✕</button>
         </div>
 
@@ -389,6 +389,7 @@
           <button class="splash-tab" onclick="showSplashTab('links', this)">Links</button>
           <button class="splash-tab" onclick="showSplashTab('changelog', this)">Changelog</button>
           <button class="splash-tab" onclick="showSplashTab('faq', this)">FAQ</button>
+          <button class="splash-tab" onclick="showSplashTab('software', this)">Other Software</button>
         </div>
 
         <div class="splash-body">
@@ -508,7 +509,18 @@
           <div class="splash-pane" id="splash-changelog">
             <h3>Version History</h3>
             <div class="splash-changelog-entry">
-              <div class="splash-changelog-ver">v1.4.0 — Latest</div>
+              <div class="splash-changelog-ver">v1.5.0 — Latest</div>
+              <ul>
+                <li>Collapsible sidebar — collapse the left panel for a full map view with smooth animated tab, works in both 2D and 3D</li>
+                <li>Date range filter — filter all map contacts by QSO date from/to, works alongside band, callsign, and country filters</li>
+                <li>Callsign hyperlinks — every callsign in contact cards, popups, and the All Contacts panel links directly to QRZ</li>
+                <li>Home QTH beacon now appears on the 3D globe by default</li>
+                <li>Grid-square derived contacts now scatter within their cell instead of stacking on the exact centre point</li>
+                <li>QSL confirmation feature removed</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.4.0</div>
               <ul>
                 <li>Contact line hover tooltip — hover any 2D geodesic path or 3D arc to see great-circle distance (km &amp; mi)</li>
                 <li>Clicking a contact line opens the same contact card as clicking the dot, in both 2D and 3D</li>
@@ -648,6 +660,28 @@
             </div>
 
           </div>
+
+          <div class="splash-pane" id="splash-software">
+            <h3>Other Software</h3>
+            <div style="margin-top:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px 22px;">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                <div style="font-size:1.6rem;">📡</div>
+                <div>
+                  <div style="font-family:var(--font-mono);font-size:1rem;font-weight:700;letter-spacing:2px;color:var(--text);">POLAR<span style="color:var(--acc);">SCOPE</span></div>
+                  <div style="font-size:0.72rem;color:var(--muted);letter-spacing:0.06em;text-transform:uppercase;">Antenna Radiation Pattern Simulator</div>
+                </div>
+              </div>
+              <p style="font-size:0.82rem;color:rgba(255,255,255,0.6);line-height:1.6;margin-bottom:14px;">
+                A real-time 3D antenna radiation pattern simulator built entirely in the browser as a single HTML file. Visualise far-field patterns, compare antennas side-by-side, and explore wave propagation — all powered by physics-based electromagnetic models using Plotly.js for 3D rendering.
+              </p>
+              <p style="font-size:0.78rem;color:var(--muted);margin-bottom:16px;">No installation required. No data leaves your device. No server needed — just open the HTML file in any modern browser.</p>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <a href="https://polarscope.tiiny.site/" target="_blank" rel="noopener" style="flex:1;min-width:120px;padding:9px 14px;background:color-mix(in srgb,var(--acc),transparent 85%);border:1px solid var(--acc);color:var(--acc);border-radius:6px;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;letter-spacing:0.06em;text-decoration:none;text-align:center;cursor:pointer;">OPEN APP ›</a>
+                <a href="https://github.com/polarscope-studio/polarscope" target="_blank" rel="noopener" style="flex:1;min-width:120px;padding:9px 14px;background:transparent;border:1px solid var(--brd);color:var(--muted);border-radius:6px;font-family:var(--font-mono);font-size:0.72rem;font-weight:600;letter-spacing:0.06em;text-decoration:none;text-align:center;">GITHUB ›</a>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <div class="splash-footer">
