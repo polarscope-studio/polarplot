@@ -1396,6 +1396,7 @@ async function takeScreenshot(cameraView = false) {
     const inclBands    = document.getElementById('ss-bands')?.checked;
     const inclDXCC     = document.getElementById('ss-dxcc')?.checked;
     const inclModes    = document.getElementById('ss-modes')?.checked;
+    const ssTitle      = document.getElementById('ss-title')?.value?.trim() || '';
 
     try {
         const rootStyle = getComputedStyle(document.documentElement);
@@ -1452,6 +1453,17 @@ async function takeScreenshot(cameraView = false) {
 
         const drawLegend = (ctx, lxL, outH) => {
             let cy = PAD;
+
+            // Custom title bar
+            if (ssTitle) {
+                ctx.fillStyle = cAcc;
+                ctx.font = `700 13px "JetBrains Mono", monospace`;
+                ctx.fillText(ssTitle.toUpperCase(), lxL + PAD, cy + 13);
+                cy += 20;
+                ctx.strokeStyle = cAcc + '44'; ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(lxL + PAD, cy); ctx.lineTo(lxL + PW - PAD, cy); ctx.stroke();
+                cy += 16;
+            }
 
             const drawHeading = (txt) => {
                 ctx.font = `700 10px "JetBrains Mono", monospace`;

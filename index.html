@@ -1297,6 +1297,9 @@ Website: https://polarplot.net</div>
           <span style="font-size:1rem;font-weight:700;color:var(--text);">Export QSO Map</span>
         </div>
         <p style="font-size:0.75rem;color:var(--muted);margin:0 0 18px;">Select which panels to include in the legend alongside your map.</p>
+        <div style="margin-bottom:14px;">
+          <input type="text" id="ss-title" placeholder="Screenshot title (e.g. POTA, SOTA, Contest...)" maxlength="40" style="width:100%;box-sizing:border-box;padding:8px 12px;background:var(--surf2);border:1px solid var(--brd);border-radius:6px;color:var(--text);font-family:var(--font-mono);font-size:0.78rem;outline:none;transition:border-color 0.15s;" onfocus="this.style.borderColor='var(--acc)'" onblur="this.style.borderColor='var(--brd)'">
+        </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:22px;">
           <label class="ss-check-row"><input type="checkbox" id="ss-callsign" checked><span>Station Callsign &amp; Info</span></label>
           <label class="ss-check-row"><input type="checkbox" id="ss-stats" checked><span>QSO Statistics</span></label>
