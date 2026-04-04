@@ -1018,7 +1018,7 @@ corsProxyInput.value = (savedProxy && savedProxy !== 'https://cors-anywhere.hero
 
             if (stillMissing.length > 0) {
                 stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML lookup: 0 / ${stillMissing.length}...`;
-                let idx = 0, batchSize = 5, firstError = null;
+                let idx = 0, batchSize = proxy ? 2 : 5, firstError = null;
                 const processPulse = async () => {
                     while (idx < totalToResolve) {
                         const qso = stillMissing[idx++];
@@ -1039,10 +1039,12 @@ corsProxyInput.value = (savedProxy && savedProxy !== 'https://cors-anywhere.hero
                             stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML: ${processedCount}/${stillMissing.length} (${resolvedCount} needed fixing)`;
                             updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, percent);
                             if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
+                            if (proxy) await new Promise(r => setTimeout(r, 300));
                         } catch (e) {
                             processedCount++;
                             if (!firstError) { firstError = e.message; console.error('QRZ XML lookup error:', e.message); }
                             updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, 15 + Math.floor((processedCount / totalToResolve) * 85));
+                            if (proxy) await new Promise(r => setTimeout(r, 600));
                         }
                     }
                 };

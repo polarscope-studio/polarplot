@@ -12,6 +12,13 @@ export class QRZService {
     this.sessionKey = apiKey || localStorage.getItem('qrz_session_key');
   }
 
+  _proxyUrl(target) {
+    if (!this.proxyUrl) return target;
+    // Proxies ending with '?' (e.g. corsproxy.io/?) need the target URL encoded
+    if (this.proxyUrl.endsWith('?')) return this.proxyUrl + encodeURIComponent(target);
+    return this.proxyUrl + target;
+  }
+
   async lookup(callsign) {
     if (!this.sessionKey) {
       await this.login();
@@ -21,7 +28,7 @@ export class QRZService {
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s Tactical Timeout
 
     try {
-      const url = `${this.proxyUrl}https://xmldata.qrz.com/xml/current/?s=${this.sessionKey};callsign=${callsign}`;
+      const url = this._proxyUrl(`https://xmldata.qrz.com/xml/current/?s=${this.sessionKey};callsign=${callsign}`);
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
       const text = await response.text();
@@ -80,7 +87,7 @@ export class QRZService {
 
     // QRZ does not send CORS headers — must use proxy. Try proxy first, direct as last resort.
     const urls = [];
-    if (this.proxyUrl) urls.push(`${this.proxyUrl}https://logbook.qrz.com/api`);
+    if (this.proxyUrl) urls.push(this._proxyUrl('https://logbook.qrz.com/api'));
     urls.push('https://logbook.qrz.com/api');
 
     let raw = null;
@@ -178,7 +185,7 @@ export class QRZService {
     if (!key) throw new Error('No API key');
 
     const urls = [];
-    if (this.proxyUrl) urls.push(`${this.proxyUrl}https://logbook.qrz.com/api`);
+    if (this.proxyUrl) urls.push(this._proxyUrl('https://logbook.qrz.com/api'));
     urls.push('https://logbook.qrz.com/api');
 
     const body = new URLSearchParams({ KEY: key, ACTION: 'FETCH', OPTION: 'TYPE:ADIF,STATUS:ALL' }).toString();
@@ -246,7 +253,7 @@ export class QRZService {
     
     if (!loginUser || !loginPass) throw new Error('MISSING_CREDENTIALS');
 
-    const url = `${this.proxyUrl}https://xmldata.qrz.com/xml/current/?username=${loginUser};password=${encodeURIComponent(loginPass)};agent=polarplot-v1`;
+    const url = this._proxyUrl(`https://xmldata.qrz.com/xml/current/?username=${loginUser};password=${encodeURIComponent(loginPass)};agent=polarplot-v1`);
     const response = await fetch(url);
     const text = await response.text();
 
