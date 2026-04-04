@@ -916,7 +916,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const pass = document.getElementById('qrz-pass').value;
                 const proxy = document.getElementById('cors-proxy').value;
                 
-                if (!call || (!key && !user)) return alert('Enter a Callsign and either a Direct Key OR QRZ Username.');
+                if (!call || (!key && !user)) { showTacticalToast('Enter a callsign and either a Direct Key or QRZ username.', 4000); return; }
                 
                 try {
                     isResolving = true;
@@ -944,7 +944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 localStorage.setItem('polarlog_my_lon', data.lon);
                             }
                         }
-                    } else alert('Station not found or QRZ Session Error.');
+                    } else showTacticalToast('Station not found or QRZ session error. If you haven\'t already, activate your CORS proxy using the Activate Proxy button.', 6000);
                 } catch (err) {
                     isResolving = false;
                     updateLoadingStatus(false);
@@ -952,7 +952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     lookupBtn.disabled = false;
                     if (err.message === 'PROXY_BLOCK') {
                         if (window.confirm('PROXY BLOCKED: Activate CORS session?')) window.open(proxy, '_blank');
-                    } else alert('Connection Failed: ' + err.message);
+                    } else showTacticalToast('Connection failed: ' + err.message + '. Try activating your CORS proxy using the Activate Proxy button.', 6000);
                 }
             };
         }
@@ -960,15 +960,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         async function bulkResolveQSOs(forceAll = false) {
             const btn = document.getElementById('bulk-resolve-btn');
             const stats = document.getElementById('resolve-stats');
-            if (currentQSOs.length === 0) return alert('Import a log first.');
+            if (currentQSOs.length === 0) { showTacticalToast('Import a log first.', 3000); return; }
             btn.disabled = true;
             btn.textContent = 'INITIALIZING...';
             const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.LON);
             const user = document.getElementById('qrz-user').value, pass = document.getElementById('qrz-pass').value, key = document.getElementById('qrz-key').value, proxy = document.getElementById('cors-proxy').value;
-            if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; return alert('Credentials Required.'); }
+            if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; showTacticalToast('QRZ credentials required. Enter your username, password or API key.', 4000); return; }
             if (!forceAll && missing.length === 0) {
-                if (window.confirm('All contacts resolved. Force refresh?')) return bulkResolveQSOs(true);
-                btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; return;
+                btn.disabled = false; btn.textContent = 'FORCE REFRESH ALL';
+                showTacticalToast('All contacts already resolved. Click again to force a full refresh.', 4000);
+                setTimeout(() => { if (btn.textContent === 'FORCE REFRESH ALL') btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; }, 4000);
+                btn.onclick = () => { btn.onclick = null; bulkResolveQSOs(true); };
+                return;
             }
             isResolving = true;
             btn.textContent = 'RESOLVING...';
@@ -1017,6 +1020,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const processPulse = async () => {
                     while (idx < totalToResolve) {
                         const qso = stillMissing[idx++];
+                        if (!qso.CALL || qso.CALL.length < 3) { processedCount++; continue; }
                         try {
                             const data = await qrz.lookup(qso.CALL);
                             processedCount++;
@@ -1850,7 +1854,7 @@ function initGlobe(el) {
             const alt = globeInstance.pointOfView().altitude;
             const cell = alt > 3 ? 6 : alt > 1.5 ? 4 : alt > 0.8 ? 2 : alt > 0.3 ? 1 : alt > 0.15 ? 0.5 : 0;
             if (cell !== _lastCellDeg) { _lastCellDeg = cell; updateGlobeDots(); }
-        }, 200);
+        }, 350);
 
         // Track + fade popup as globe orbits
         if (_globePopupGeoPoint) {
