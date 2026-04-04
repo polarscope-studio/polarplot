@@ -112,7 +112,7 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - **RESOLVE MISSING / LOCATION DATA** — for contacts where your ADIF has no coordinates or grid square, Polarplot batch-queries QRZ to fill in lat/lon and country
 - Falls back gracefully: QRZ lat/lon → grid square decode → skips if still unresolvable
 - Session key caching — logs in once, reuses the session key for the entire batch
-- CORS proxy support for environments that need it
+- Dedicated Cloudflare Worker proxy — no activation needed, works out of the box for all users
 
 
 ---
@@ -233,7 +233,7 @@ To use coordinate resolution and logbook import:
 
 1. Get a QRZ XML Data subscription at [qrz.com](https://www.qrz.com/page/xml_data.html)
 2. Open Polarplot settings → enter your QRZ username, password, and API key
-3. If running locally without a backend, activate the CORS proxy at `https://cors-anywhere.herokuapp.com/corsdemo`
+3. Hit **Resolve Missing / Location Data** — the built-in Cloudflare proxy handles the rest, no setup required
 
 ---
 

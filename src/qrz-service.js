@@ -31,6 +31,7 @@ export class QRZService {
       const url = this._proxyUrl(`https://xmldata.qrz.com/xml/current/?s=${this.sessionKey};callsign=${callsign}`);
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
+      if (response.status === 429) throw new Error('RATE_LIMITED');
       const text = await response.text();
       
       if (text.includes('This API enables cross-origin requests')) throw new Error('PROXY_BLOCK');

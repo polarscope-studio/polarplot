@@ -900,7 +900,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             qrzUserInput.addEventListener('input', (e) => localStorage.setItem('polarlog_qrz_user', e.target.value));
         }
         if (corsProxyInput) {
-            corsProxyInput.value = localStorage.getItem('polarlog_cors_proxy') || 'https://cors-anywhere.herokuapp.com/';
+            corsProxyInput.value = localStorage.getItem('polarlog_cors_proxy') || 'https://qrz-proxy.m7pxzqrz.workers.dev/';
             corsProxyInput.addEventListener('input', (e) => localStorage.setItem('polarlog_cors_proxy', e.target.value));
         }
         
@@ -944,7 +944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 localStorage.setItem('polarlog_my_lon', data.lon);
                             }
                         }
-                    } else showTacticalToast('Station not found or QRZ session error. If you haven\'t already, activate your CORS proxy using the Activate Proxy button.', 6000);
+                    } else showTacticalToast('Station not found or QRZ session error. Check your QRZ credentials and try again.', 6000);
                 } catch (err) {
                     isResolving = false;
                     updateLoadingStatus(false);
@@ -952,7 +952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     lookupBtn.disabled = false;
                     if (err.message === 'PROXY_BLOCK') {
                         if (window.confirm('PROXY BLOCKED: Activate CORS session?')) window.open(proxy, '_blank');
-                    } else showTacticalToast('Connection failed: ' + err.message + '. Try activating your CORS proxy using the Activate Proxy button.', 6000);
+                    } else showTacticalToast('Connection failed: ' + err.message + '. Check your proxy URL or network connection.', 6000);
                 }
             };
         }
@@ -1012,42 +1012,86 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // ── Phase 3: XML lookup for remaining unresolved contacts ───────
             const stillMissing = missing.filter(q => !q.LAT || !q.LON || q._fromGrid);
-            let resolvedCount = logbookMatched, totalToResolve = stillMissing.length, processedCount = 0;
+            let resolvedCount = logbookMatched, processedCount = 0;
             let lastRedraw = Date.now();
 
             if (stillMissing.length > 0) {
                 stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML lookup: 0 / ${stillMissing.length}...`;
-                let idx = 0, batchSize = proxy ? 2 : 5, firstError = null;
-                const processPulse = async () => {
-                    while (idx < totalToResolve) {
-                        const qso = stillMissing[idx++];
-                        if (!qso.CALL || qso.CALL.length < 3) { processedCount++; continue; }
+
+                // Deduplicate by callsign — resolve each unique call once, apply to all matching QSOs
+                const callMap = new Map(); // call → [qso, ...]
+                for (const qso of stillMissing) {
+                    if (!qso.CALL || qso.CALL.length < 3) { processedCount++; continue; }
+                    if (!callMap.has(qso.CALL)) callMap.set(qso.CALL, []);
+                    callMap.get(qso.CALL).push(qso);
+                }
+                const uniqueCalls = [...callMap.keys()];
+                const uniqueTotal = uniqueCalls.length;
+                let uniqueDone = 0;
+
+                // Adaptive rate limiter — starts fast, backs off on 429, recovers gradually
+                let delay = 0;
+                let successStreak = 0;
+                const CONCURRENCY = 10;
+                // Shared token — all workers must acquire this before firing a request
+                let nextSlot = Promise.resolve();
+
+                const lookupCall = async (call) => {
+                    let retries = 0;
+                    while (retries < 5) {
                         try {
-                            const data = await qrz.lookup(qso.CALL);
-                            processedCount++;
-                            if (data && data.lat && data.lon) {
-                                qso.LAT = data.lat;
-                                qso.LON = data.lon;
-                                qso._fromGrid = false;
-                                if (data.grid)    qso.GRIDSQUARE = data.grid;
-                                if (data.dxcc)    qso.DXCC       = data.dxcc;
-                                if (data.country) qso.COUNTRY    = data.country;
-                                resolvedCount++;
+                            // All workers share one slot — only one request fires at a time through proxy
+                            await nextSlot;
+                            nextSlot = new Promise(r => setTimeout(r, delay));
+                            const data = await qrz.lookup(call);
+                            // Success — gradually recover speed
+                            successStreak++;
+                            if (successStreak > 10 && delay > 100) {
+                                delay = Math.max(100, delay - 50);
+                                successStreak = 0;
                             }
-                            const percent = 15 + Math.floor((processedCount / totalToResolve) * 85);
-                            stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML: ${processedCount}/${stillMissing.length} (${resolvedCount} needed fixing)`;
-                            updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, percent);
-                            if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
-                            if (proxy) await new Promise(r => setTimeout(r, 300));
+                            uniqueDone++;
+                            if (data && data.lat && data.lon) {
+                                for (const qso of callMap.get(call)) {
+                                    qso.LAT = data.lat;
+                                    qso.LON = data.lon;
+                                    qso._fromGrid = false;
+                                    if (data.grid)    qso.GRIDSQUARE = data.grid;
+                                    if (data.dxcc)    qso.DXCC       = data.dxcc;
+                                    if (data.country) qso.COUNTRY    = data.country;
+                                }
+                                resolvedCount += callMap.get(call).length;
+                            }
+                            processedCount += callMap.get(call).length;
+                            break;
                         } catch (e) {
-                            processedCount++;
-                            if (!firstError) { firstError = e.message; console.error('QRZ XML lookup error:', e.message); }
-                            updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, 15 + Math.floor((processedCount / totalToResolve) * 85));
-                            if (proxy) await new Promise(r => setTimeout(r, 600));
+                            if (e.message === 'RATE_LIMITED') {
+                                successStreak = 0;
+                                delay = Math.min(delay + 300, 2000);
+                                const backoff = 2000 + (retries * 1000);
+                                stats.textContent = `Rate limited — backing off ${backoff/1000}s...`;
+                                await new Promise(r => setTimeout(r, backoff));
+                                retries++;
+                            } else {
+                                uniqueDone++;
+                                processedCount += callMap.get(call).length;
+                                console.error('QRZ lookup error:', call, e.message);
+                                break;
+                            }
                         }
                     }
+                    if (retries >= 5) { uniqueDone++; processedCount += callMap.get(call).length; }
+                    const percent = 15 + Math.floor((uniqueDone / uniqueTotal) * 85);
+                    stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML: ${uniqueDone}/${uniqueTotal} calls (${resolvedCount} needed fixing)`;
+                    updateLoadingStatus(true, `Pulse Engine: ${uniqueDone}/${uniqueTotal}`, percent);
+                    if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
                 };
-                await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
+
+                const queue = uniqueCalls.map(call => () => lookupCall(call));
+                const workers = Array(CONCURRENCY).fill(null).map(async () => {
+                    while (queue.length) await queue.shift()();
+                });
+                await Promise.all(workers);
             }
 
             isResolving = false; updateLoadingStatus(false);

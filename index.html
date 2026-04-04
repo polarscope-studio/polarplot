@@ -535,7 +535,16 @@
           <div class="splash-pane" id="splash-changelog">
             <h3>Version History</h3>
             <div class="splash-changelog-entry">
-              <div class="splash-changelog-ver">v1.5.0 — Latest</div>
+              <div class="splash-changelog-ver">v1.6.0 — Latest</div>
+              <ul>
+                <li>Dedicated Cloudflare Worker proxy — QRZ resolve now works out of the box for all users, no activation required</li>
+                <li>QRZ resolve now deduplicates callsigns before lookup — each unique station is only queried once, applied to all matching QSOs</li>
+                <li>Grid-derived contacts now included in QRZ resolve — Log4OM and similar logs with zeroed coordinates are correctly enriched</li>
+                <li>Adaptive rate limiting with automatic backoff and retry on resolve errors</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.5.0</div>
               <ul>
                 <li>Collapsible sidebar — collapse the left panel for a full map view with smooth animated tab, works in both 2D and 3D</li>
                 <li>Date range filter — filter all map contacts by QSO date from/to, works alongside band, callsign, and country filters</li>
@@ -966,9 +975,8 @@ Website: https://polarplot.net</div>
           <div class="field-group" style="margin-top: 8px;">
             <label for="cors-proxy" style="display:flex;align-items:center;justify-content:space-between;">
               <span style="display:flex;align-items:center;gap:5px;">Data Proxy <span class="pwd-info-icon" id="proxy-info-icon">ℹ</span></span>
-              <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" rel="noopener" style="font-size:0.68rem;color:var(--acc);font-weight:600;text-decoration:none;opacity:0.8;" title="Click to activate the demo proxy in a new tab">Activate Proxy ↗</a>
             </label>
-            <input type="text" id="cors-proxy" class="field-input" placeholder="CORS Proxy URL (optional)..." value="https://cors-anywhere.herokuapp.com/">
+            <input type="text" id="cors-proxy" class="field-input" placeholder="CORS Proxy URL (optional)..." value="https://qrz-proxy.m7pxzqrz.workers.dev/">
           </div>
           <div class="field-group" style="margin-top: 8px;">
             <label style="display:flex;align-items:center;justify-content:space-between;">
@@ -1186,9 +1194,9 @@ Website: https://polarplot.net</div>
 
     <!-- Data Proxy tooltip -->
     <div id="proxy-tooltip" style="display:none;position:fixed;width:260px;background:rgba(10,12,22,0.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:12px 14px;font-size:0.72rem;font-weight:400;font-family:'DM Sans',sans-serif;color:rgba(255,255,255,0.6);line-height:1.65;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:99999;pointer-events:none;white-space:normal;text-transform:none;letter-spacing:0;">
-      A <strong>CORS proxy</strong> is needed because QRZ's servers block direct browser requests. The proxy forwards them server-side to get around this.<br><br>
-      <strong>✓ Works when:</strong> You visit <em>Activate Proxy ↗</em> first and click "Request temporary access" in that tab — access lasts a few hours.<br><br>
-      <strong>✗ Won't work when:</strong> You haven't activated it, the demo quota is full, or you're on a network that blocks it.<br><br>
+      Polarplot uses a dedicated <strong>Cloudflare Worker</strong> to forward QRZ requests — no setup or activation needed.<br><br>
+      <strong>✓ Works out of the box</strong> for all users on the live site and locally.<br><br>
+      <strong>✗ Won't work when:</strong> The proxy is unreachable or your network blocks external requests. You can enter a custom proxy URL if needed.<br><br>
       <strong>Better alternative:</strong> Export your QRZ logbook as ADIF and drop it into the <em>QRZ Logbook Reference</em> box below — no proxy needed at all.
     </div>
 
