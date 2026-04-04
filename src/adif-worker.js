@@ -54,7 +54,10 @@ function gridToCoords(grid) {
     const lon = (g.charCodeAt(0) - 65) * 20 - 180 + (parseInt(g[2]) * 2) + (g.length >= 6 ? (g.charCodeAt(4) - 65) * (2/24) + (1/24) : 1);
     const lat = (g.charCodeAt(1) - 65) * 10 - 90  + parseInt(g[3]) + (g.length >= 6 ? (g.charCodeAt(5) - 65) * (1/24) + (0.5/24) : 0.5);
     if (isNaN(lat) || isNaN(lon)) return null;
-    return { lat, lon };
+    // Add jitter so grid-derived contacts don't stack on exact cell centres
+    const jLon = g.length >= 6 ? (Math.random() - 0.5) * (2/24) : (Math.random() - 0.5) * 1.6;
+    const jLat = g.length >= 6 ? (Math.random() - 0.5) * (1/24) : (Math.random() - 0.5) * 0.8;
+    return { lat: lat + jLat, lon: lon + jLon };
 }
 
 function decodeCoordinate(coordStr) {

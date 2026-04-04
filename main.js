@@ -952,7 +952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (currentQSOs.length === 0) return alert('Import a log first.');
             btn.disabled = true;
             btn.textContent = 'INITIALIZING...';
-            const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.GRIDSQUARE);
+            const missing = forceAll ? currentQSOs : currentQSOs.filter(q => !q.LAT || !q.LON);
             const user = document.getElementById('qrz-user').value, pass = document.getElementById('qrz-pass').value, key = document.getElementById('qrz-key').value, proxy = document.getElementById('cors-proxy').value;
             if (!key && (!user || !pass)) { btn.disabled = false; btn.textContent = 'RESOLVE MISSING / LOCATION DATA'; return alert('Credentials Required.'); }
             if (!forceAll && missing.length === 0) {
@@ -1002,29 +1002,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (stillMissing.length > 0) {
                 stats.textContent = `Logbook: ${logbookMatched} matched. XML lookup: 0 / ${stillMissing.length}...`;
-                let idx = 0, batchSize = 5;
+                let idx = 0, batchSize = 5, firstError = null;
                 const processPulse = async () => {
                     while (idx < totalToResolve) {
                         const qso = stillMissing[idx++];
                         try {
                             const data = await qrz.lookup(qso.CALL);
                             processedCount++;
-                            if (data) {
+                            if (data && data.lat && data.lon) {
                                 qso.LAT = data.lat;
                                 qso.LON = data.lon;
-                                qso.GRIDSQUARE = data.grid;
-                                if (data.dxcc)    qso.DXCC    = data.dxcc;
-                                if (data.country) qso.COUNTRY = data.country;
+                                if (data.grid)    qso.GRIDSQUARE = data.grid;
+                                if (data.dxcc)    qso.DXCC       = data.dxcc;
+                                if (data.country) qso.COUNTRY    = data.country;
                                 resolvedCount++;
                             }
                             const percent = 15 + Math.floor((processedCount / totalToResolve) * 85);
                             stats.textContent = `Logbook: ${logbookMatched} · XML: ${processedCount}/${stillMissing.length} (${resolvedCount} total resolved)`;
                             updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, percent);
                             if (Date.now() - lastRedraw > 1500) { processQSOs(currentQSOs, false); lastRedraw = Date.now(); }
-                        } catch (e) { processedCount++; updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, 15 + Math.floor((processedCount / totalToResolve) * 85)); }
+                        } catch (e) {
+                            processedCount++;
+                            if (!firstError) { firstError = e.message; console.error('QRZ XML lookup error:', e.message); }
+                            updateLoadingStatus(true, `Pulse Engine: ${processedCount}/${stillMissing.length}`, 15 + Math.floor((processedCount / totalToResolve) * 85));
+                        }
                     }
                 };
                 await Promise.all(Array(batchSize).fill(0).map(() => processPulse()));
+                if (firstError) stats.textContent += ` — Error: ${firstError.slice(0, 80)}`;
             }
 
             isResolving = false; updateLoadingStatus(false);
