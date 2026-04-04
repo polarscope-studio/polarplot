@@ -47,9 +47,12 @@
       [data-theme=light] .splash-tab { color: rgba(255,255,255,0.5); }
       [data-theme=light] .splash-tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
       [data-theme=light] .splash-body h3 { color: #e2e8f0; }
+      [data-theme=light] .splash-body p { color: rgba(255,255,255,0.6); }
+      [data-theme=light] .splash-card .splash-sub { color: rgba(255,255,255,0.5); }
       [data-theme=light] .splash-footer { border-top-color: rgba(255,255,255,0.08); }
       [data-theme=light] .splash-footer-note { color: rgba(255,255,255,0.3); }
       [data-theme=light] .splash-card .htitle { color: #ffffff; }
+      [data-theme=light] .splash-card .splash-software-title { color: #ffffff !important; }
       .splash-hero {
         display: flex; align-items: center; gap: 16px;
         padding: 28px 28px 0;
@@ -391,6 +394,7 @@
             <div class="htitle">POLAR<span>PLOT</span></div>
             <div class="splash-sub">HAM RADIO CONTACT VISUALIZER</div>
           </div>
+          <button onclick="document.getElementById('license-modal').style.display='flex'" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:0.7rem;color:rgba(255,255,255,0.25);font-family:'JetBrains Mono',monospace;letter-spacing:0.05em;padding:4px 8px;transition:color 0.2s;align-self:flex-start;" onmouseover="this.style.color='rgba(255,255,255,0.6)'" onmouseout="this.style.color='rgba(255,255,255,0.25)'">⚖ GPL v3</button>
         </div>
 
         <div class="splash-warning" id="splashWarning">
@@ -714,7 +718,7 @@
               <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
                 <img src="src/assets/polarscope-logo.png" alt="Polarscope" style="width:36px;height:36px;object-fit:contain;border-radius:6px;">
                 <div>
-                  <div style="font-family:var(--font-mono);font-size:1rem;font-weight:700;letter-spacing:2px;color:var(--text);">POLAR<span style="color:var(--acc);">SCOPE</span></div>
+                  <div style="font-family:var(--font-mono);font-size:1rem;font-weight:700;letter-spacing:2px;color:var(--text);" class="splash-software-title">POLAR<span style="color:var(--acc);">SCOPE</span></div>
                   <div style="font-size:0.72rem;color:var(--muted);letter-spacing:0.06em;text-transform:uppercase;">Antenna Radiation Pattern Simulator</div>
                 </div>
               </div>
@@ -732,7 +736,7 @@
         </div>
 
         <div class="splash-footer">
-          <span class="splash-footer-note">POLARPLOT <button onclick="document.getElementById('license-modal').style.display='flex'" style="background:none;border:none;cursor:pointer;font-size:0.7rem;color:rgba(255,255,255,0.25);font-family:'JetBrains Mono',monospace;letter-spacing:0.05em;padding:0;transition:color 0.2s;" onmouseover="this.style.color='rgba(255,255,255,0.6)'" onmouseout="this.style.color='rgba(255,255,255,0.25)'">⚖ GPL v3</button> // CREATED & DESIGNED <a href="https://www.qrz.com/db/M7PXZ" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">M7PXZ</a></span>
+          <span class="splash-footer-note">POLARPLOT // CREATED & DESIGNED <a href="https://www.qrz.com/db/M7PXZ" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">M7PXZ</a></span>
           <button class="splash-enter" onclick="closeSplash()">ENTER ›</button>
         </div>
 
@@ -965,7 +969,7 @@ Website: https://polarplot.net</div>
           <div class="field-group">
             <label for="qrz-key" style="display:flex;align-items:center;justify-content:space-between;">
               <span>Direct API/Session Key</span>
-              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.7rem;color:rgba(255,255,255,0.4);font-weight:400;text-transform:uppercase;letter-spacing:1px;margin-bottom:0;">
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.7rem;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:1px;margin-bottom:0;">
                 <input type="checkbox" id="qrz-key-remember" style="accent-color:#38bdf8;width:11px;height:11px;cursor:pointer;">
                 Remember
               </label>
