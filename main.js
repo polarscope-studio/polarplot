@@ -623,7 +623,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     requestAnimationFrame(tick);
                 }
             } else if (globeInstance) {
-                // Drive globe resize every frame for the full transition duration
                 const globeEl = document.getElementById('globe-container');
                 const duration = 320;
                 const start = performance.now();
