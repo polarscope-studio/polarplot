@@ -7,6 +7,18 @@ let worker;
 let currentQSOs = [];
 let searchQuery = '';
 let selectedDXCC = '';
+let dateFrom = '';
+let dateTo = '';
+
+// QSO_DATE is YYYYMMDD, date inputs are YYYY-MM-DD
+function dateMatchesRange(qsoDate) {
+    if (!dateFrom && !dateTo) return true;
+    if (!qsoDate || qsoDate.length < 8) return true;
+    const d = qsoDate.slice(0,4) + '-' + qsoDate.slice(4,6) + '-' + qsoDate.slice(6,8);
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo   && d > dateTo)   return false;
+    return true;
+}
 let isResolving = false;
 let currentUnits = localStorage.getItem('polarlog_units') || 'km';
 
@@ -1123,6 +1135,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.getElementById('search-call')?.addEventListener('input', (e) => { searchQuery = e.target.value.toUpperCase(); processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
         document.getElementById('filter-dxcc')?.addEventListener('change', (e) => { selectedDXCC = e.target.value; processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
+        const applyDateFilter = () => { processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); };
+        document.getElementById('date-from')?.addEventListener('change', (e) => { dateFrom = e.target.value; applyDateFilter(); });
+        document.getElementById('date-to')?.addEventListener('change',   (e) => { dateTo   = e.target.value; applyDateFilter(); });
+        document.getElementById('date-filter-clear')?.addEventListener('click', () => {
+            dateFrom = ''; dateTo = '';
+            document.getElementById('date-from').value = '';
+            document.getElementById('date-to').value = '';
+            applyDateFilter();
+        });
         document.getElementById('close-history')?.addEventListener('click', () => document.getElementById('history-panel').classList.remove('visible'));
         document.getElementById('close-station')?.addEventListener('click', () => document.getElementById('station-panel').classList.remove('visible'));
 
@@ -1932,6 +1953,7 @@ function _rebuildGlobeContacts() {
         if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return;
         if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
         if (!activeBands.has(q.BAND?.toUpperCase())) return;
+        if (!dateMatchesRange(q.QSO_DATE)) return;
         if (!contacts[q.CALL]) contacts[q.CALL] = {
             lat: parseFloat(q.LAT), lng: parseFloat(q.LON),
             call: q.CALL, country: q.COUNTRY || q.DXCC || '',
@@ -2433,7 +2455,8 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
         const mSearch = !searchQuery || q.CALL.toUpperCase().startsWith(searchQuery);
         const mDXCC = !selectedDXCC || (q.COUNTRY || q.DXCC) === selectedDXCC;
         const mBand = activeBands.has(q.BAND?.toUpperCase());
-        return mSearch && mDXCC && mBand;
+        const mDate = dateMatchesRange(q.QSO_DATE);
+        return mSearch && mDXCC && mBand && mDate;
     });
     const groups = {};
     filtered.forEach(q => {
