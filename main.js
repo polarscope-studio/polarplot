@@ -1019,11 +1019,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 stats.textContent = `${logbookMatched ? `Logbook: ${logbookMatched} · ` : ''}XML lookup: 0 / ${stillMissing.length}...`;
 
                 // Deduplicate by callsign — resolve each unique call once, apply to all matching QSOs
-                const callMap = new Map(); // call → [qso, ...]
+                const callMap = new Map(); // base call → [qso, ...]
+                const baseCall = (call) => call.split('/').reduce((a, b) => a.length >= b.length ? a : b);
                 for (const qso of stillMissing) {
                     if (!qso.CALL || qso.CALL.length < 3) { processedCount++; continue; }
-                    if (!callMap.has(qso.CALL)) callMap.set(qso.CALL, []);
-                    callMap.get(qso.CALL).push(qso);
+                    const base = baseCall(qso.CALL);
+                    if (!callMap.has(base)) callMap.set(base, []);
+                    callMap.get(base).push(qso);
                 }
                 const uniqueCalls = [...callMap.keys()];
                 const uniqueTotal = uniqueCalls.length;
