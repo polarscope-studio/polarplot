@@ -145,7 +145,9 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 
 
 ### 📸 Screenshot Export
-  
+
+<img width="779" height="461" alt="polarlog-M7PXZ-2026-04-04 (1)" src="https://github.com/user-attachments/assets/9d73a463-099d-4277-8eed-21af15a497e0" />
+
 - Capture the current 2D map **or** 3D globe as a PNG
 - Globe animation is paused and locked before capture — no motion blur or drift
 - Options: full current view, or snap globe to your home QTH before capture
@@ -154,8 +156,6 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 
 ---
 <br><br>
-
----
 
 ## Technical Stack
 
@@ -237,6 +237,4 @@ To use coordinate resolution and logbook import:
 
 ---
 
-## License
-
-MIT
+Built for HAM radio operators, by HAM radio operators.
