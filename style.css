@@ -72,10 +72,10 @@ body.sidebar-collapsed #sidebar-collapse-btn { display: none; }
 /* Station & History Panels (Centered Glassy Modals) */
 .station-panel {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
-  width: 550px; max-width: 95vw; background: rgba(13, 18, 32, 0.45); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
+  width: 550px; max-width: 95vw; background: rgba(13, 18, 32, 0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; z-index: 2500; display: flex; flex-direction: column;
   opacity: 0; pointer-events: none; transition: opacity 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 40px 100px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
+  box-shadow: 0 40px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
   will-change: transform, opacity;
 }
 .station-panel.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
