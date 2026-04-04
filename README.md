@@ -1,16 +1,21 @@
-# POLARPLOT
+<img width="3093" height="1080" alt="polarplot" src="https://github.com/user-attachments/assets/618dd639-6027-4974-b59e-8dea3173c6e8" />
 
-**Ham Radio Contact Visualizer**
+---
 
-Polarplot is a browser-based ADIF log visualizer for amateur radio operators. Drop in your log file, set your home location, and watch every QSO you've ever made render as an interactive dot on a world map — or a spinning 3D globe. Filter by band, drill into contact history, resolve missing coordinates from QRZ, and export a screenshot worth framing.
+Polarplot is a browser-based ADIF log visualizer for amateur radio operators. Drop in your log file, set your home location, and watch every QSO you've ever made render as an interactive dot on a world map, or a spinning 3D globe. Filter by band, drill into contact history, resolve missing coordinates from QRZ, and export a screenshot worth framing. Designed & Created by M7PXZ.
 
 Live at **[https://polarplot.net](https://polarplot.net)**
 
 ---
 
 ## Features
+
+<br><br>
   
 ### 📂 Log Import
+
+<img src="https://github.com/user-attachments/assets/1c413ead-72a0-49d8-be61-1aacf6e97491" width="779" height="461">
+
 - Drag-and-drop or file-select any standard **ADIF** file (`.adi`, `.adif`)
 - Parses in a **dedicated Web Worker** — the UI never freezes, even on logs with thousands of QSOs
 - Chunked streaming parse with live progress indicator
@@ -18,7 +23,13 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Optional **QRZ Logbook** import — pull your entire online logbook directly via the QRZ API
 
 
+---
+<br><br>
+
+
 ### 🗺️ 2D Map
+
+<img src="https://github.com/user-attachments/assets/385c1208-764c-41b0-98e6-08deefbed7d0" width="779" height="461">
   
 - **Interactive Leaflet map** with five switchable base layers:
   - Dark Matter (CartoDB) — clean tactical dark theme
@@ -26,7 +37,7 @@ Live at **[https://polarplot.net](https://polarplot.net)**
   - Open Streets (OpenStreetMap)
   - **Satellite** — Esri ArcGIS World Imagery (Maxar/Airbus composite)
   - **Topographic** — Esri ArcGIS World Topo
-    
+  <br><br>
 - **Marker clustering** — thousands of contacts render instantly; clusters drill down on click
 - Toggle between clustered and standalone (canvas-accelerated) marker modes
 - **Great circle paths** — geodesic lines from your home QTH to every contact, rendered once and cached (no re-render on zoom or filter changes)
@@ -35,7 +46,13 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - `preferCanvas: true` for hardware-accelerated marker rendering
 
 
+---
+<br><br>
+
+
 ### 🌍 3D Globe
+
+<img src="https://github.com/user-attachments/assets/76a4304b-3ac1-4ce4-ac43-3ce532268573" width="779" height="461">
   
 - Powered by **Globe.gl** (Three.js WebGL)
 - Switch between **Day** (Blue Marble NASA texture) and **Night** (city lights texture) views
@@ -45,7 +62,13 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Click any contact dot or arc for the full station popup
 
 
+---
+<br><br>
+
+
 ### 📋 Contact Cards & Popups
+
+<img src="https://github.com/user-attachments/assets/e28c781d-ace7-445e-b43e-aef4fa39c0fa" width="779" height="461">
   
 - Every callsign is a **clickable QRZ hyperlink** — one click opens the station's QRZ page in a new tab
 - Shows: callsign, country + flag, band, mode, grid square, last QSO date/time, total QSO count
@@ -53,21 +76,38 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Popups work identically in 2D map view, 3D globe view, and the stats panel
 
 
+---
+<br><br>
+
 ### 📡 Band Filtering
+
+<img src="https://github.com/user-attachments/assets/1ed47bad-8252-4445-a437-76e575d5eefc" width="779" height="461">
   
 - Per-band toggle chips for every amateur band (160m → 70cm and beyond)
 - Each band has a unique accent color carried through markers, paths, arcs, and popups
 - Band filter state persists across sessions via localStorage
 
 
+---
+<br><br>
+
+
 ### 📊 Stats Panel — All Contacts
+
+<img src="https://github.com/user-attachments/assets/dfa942f3-f7ef-4995-94d2-f64b37156ba9" width="779" height="461">
+
 - Sortable table of every unique callsign worked
 - Columns: callsign, country (flag + name), band, mode, last QSO date, QSO count
 - Full-text search across callsigns, countries, bands, and modes
 - Country names resolved from callsign prefix when not present in the log (covers WSJTX-style logs)
 
+---
+<br><br>
+
 
 ### 🔍 QRZ Integration
+
+<img src="https://github.com/user-attachments/assets/cb39705c-8b7c-4eaf-8e05-a1a53c339248" width="779" height="461">
   
 - **RESOLVE MISSING / LOCATION DATA** — for contacts where your ADIF has no coordinates or grid square, Polarplot batch-queries QRZ to fill in lat/lon and country
 - Falls back gracefully: QRZ lat/lon → grid square decode → skips if still unresolvable
@@ -75,18 +115,33 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - CORS proxy support for environments that need it
 
 
+---
+<br><br>
+
 ### 📍 Location Input
+
+<img src="https://github.com/user-attachments/assets/72a8c9e4-62b9-4136-bf5a-0a784c086643" width="779" height="461">
   
 - Set home QTH by **Maidenhead grid square** or **manual lat/lon**
 - Auto-resolves your own callsign via QRZ to pre-fill home coordinates
 - Home location persists in localStorage
 
 
+---
+<br><br>
+
+
 ### 🎨 Themes & Customization
+
+<img src="https://github.com/user-attachments/assets/ef539e9a-5ee8-4e18-b148-ed7edda214bc" width="779" height="461">
   
 - Multiple UI color themes selectable from the settings panel
 - Accent color propagates to markers, paths, arcs, cluster icons, and popup highlights
 - All preferences (theme, bands, units, map layer, clusters, paths) persist in localStorage
+
+
+---
+<br><br>
 
 
 ### 📸 Screenshot Export
@@ -95,6 +150,10 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - Globe animation is paused and locked before capture — no motion blur or drift
 - Options: full current view, or snap globe to your home QTH before capture
 - Rendered at screen resolution via html2canvas (2D) and WebGL canvas capture (3D)
+
+
+---
+<br><br>
 
 ---
 
