@@ -111,6 +111,7 @@ export class MapEngine {
     const historyCount = Array.isArray(qso) ? qso.length : 1;
     const lat = parseFloat(latest.LAT);
     const lon = parseFloat(latest.LON);
+    const weight = options.weight || (options.tactical ? 3.5 : 1.5);
 
     const tactical = options.tactical || {};
     const cName    = tactical.name || latest.COUNTRY || latest.DXCC || 'Unknown Country';
@@ -186,19 +187,19 @@ export class MapEngine {
 
     // Draw Great Circle Path — only when visible and not a markers-only refresh
     if (this.homeLocation && this.pathsVisible && !this._skipPathBuild) {
-        this.addPath(this.homeLocation, [lat, lon], color, Array.isArray(qso) ? qso : [qso], popupContent);
+        this.addPath(this.homeLocation, [lat, lon], color, Array.isArray(qso) ? qso : [qso], popupContent, weight);
     }
   }
 
   /**
    * Add a Geodesic (Great Circle) path between two points
    */
-  addPath(start, end, color = '#38bdf8', stationData = null, popupHtml = null) {
+  addPath(start, end, color = '#38bdf8', stationData = null, popupHtml = null, weight = 1.5) {
       if (!L.geodesic) {
           console.warn('Leaflet.Geodesic not loaded, falling back to polyline');
           const path = L.polyline([start, end], {
               color: color,
-              weight: 1.5,
+              weight: weight,
               opacity: 0.3,
               dashArray: '5, 5'
           });
@@ -215,7 +216,7 @@ export class MapEngine {
       const distMi = distKm * 0.621371;
 
       const path = L.geodesic([start, end], {
-          weight: 1.5,
+          weight: weight,
           opacity: 0.4,
           color: color,
           steps: 24,
@@ -355,7 +356,32 @@ export class MapEngine {
     else this.map.removeLayer(this.heatLayer);
   }
 
-  fitBounds() {
+  setPathsVisible(visible) {
+    this.pathsVisible = visible;
+    if (!this.paths) return;
+    if (visible) this.paths.addTo(this.map);
+    else this.map.removeLayer(this.paths);
+  }
+
+  invalidateSize() {
+      if (this.map) this.map.invalidateSize({ animate: true });
+  }
+
+  fitBounds(customPoints = null, options = {}) {
+    // 1. Specific framing (e.g. POTA One-by-One)
+    if (customPoints) {
+        const bounds = L.latLngBounds(customPoints);
+        this.map.fitBounds(bounds, { 
+            paddingTopLeft: options.paddingTopLeft || [50, 50],
+            paddingBottomRight: options.paddingBottomRight || [50, 50],
+            animate: options.animate !== false, 
+            duration: 1.2,
+            maxZoom: options.maxZoom || 18
+        });
+        return;
+    }
+
+    // 2. Global Autocenter
     const layers = this.markers.getLayers();
     if (layers.length > 0 && this.homeLocation) {
         // Find furthest marker from home
@@ -381,7 +407,7 @@ export class MapEngine {
         const bounds = L.latLngBounds(southWest, northEast);
         const zoom = this.map.getBoundsZoom(bounds);
 
-        this.map.setView(homeLatLng, Math.min(zoom, 10), {
+        this.map.setView(homeLatLng, zoom, {
             animate: true,
             duration: 1.0
         });

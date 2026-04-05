@@ -11,7 +11,13 @@
   --font-main: 'DM Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --sidebar-width: 350px;
+  --l-sb: 350px;
+  --r-sb: 0px;
 }
+
+body.sidebar-collapsed { --l-sb: 0px; }
+body.pota-active { --r-sb: 380px; }
+body.pota-active.pota-collapsed { --r-sb: 0px; }
 
 [data-theme=light] {
   --bg: #f0f4f8; --surf: #ffffff; --surf2: #e8eef5; --brd: #c8d8e8; --brd2: #a0b4c8; --acc: #0077b6; --text: #1a2535; --muted: #6b7f96; --acc-glow: rgba(0, 119, 182, 0.1);
@@ -43,7 +49,8 @@ body { font-family: var(--font-main); color: var(--text); display: flex; }
 .sidebar { position: relative; width: var(--sidebar-width); background: var(--surf); border-right: 1px solid var(--brd); display: flex; flex-direction: column; padding: 0; z-index: 100; overflow: visible; flex-shrink: 0; box-shadow: 10px 0 30px rgba(0,0,0,0.5); transition: width 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease; }
 .sidebar.collapsed { width: 0; opacity: 0; overflow: hidden; border-right: none; }
 .sidebar-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1.25rem; display: flex; flex-direction: column; }
-#map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; transform: translateZ(0); }
+#map { flex: 1; height: 100%; background: #080b12; z-index: 10; position: relative; transform: translateZ(0); transition: margin-right 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+body.pota-active #map { margin-right: 0; }
 
 /* Sidebar collapse tab — glued to the right edge of the sidebar */
 #sidebar-collapse-btn {
@@ -57,16 +64,19 @@ body { font-family: var(--font-main); color: var(--text); display: flex; }
 #sidebar-collapse-btn:hover { color: var(--acc); border-color: var(--acc); }
 
 /* Expand tab — fixed, shown only when sidebar is collapsed */
-#sidebar-expand-tab {
-  position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+/* Common style for expand tabs (Left and Right) */
+.sidebar-expand-tab {
+  position: fixed; top: 50%; transform: translateY(-50%);
   width: 18px; height: 52px; border-radius: 0 7px 7px 0;
   background: var(--surf); border: 1px solid var(--brd); border-left: none;
   color: var(--muted); font-size: 1rem; line-height: 1;
   cursor: pointer; display: none; align-items: center; justify-content: center;
   z-index: 200; transition: color 0.2s, border-color 0.2s;
 }
-#sidebar-expand-tab:hover { color: var(--acc); border-color: var(--acc); }
-#sidebar-expand-tab.visible { display: flex; }
+.sidebar-expand-tab:hover { color: var(--acc); border-color: var(--acc); }
+.sidebar-expand-tab.visible { display: flex; }
+
+#sidebar-expand-tab { left: 0; }
 body.sidebar-collapsed #sidebar-collapse-btn { display: none; }
 
 /* Station & History Panels (Centered Glassy Modals) */
@@ -308,9 +318,13 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   background: var(--surf);
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   pointer-events: auto;
+  z-index: 5000;
 }
-.map-ctrl-group.top-right { top: 10px; right: 10px; }
-.map-ctrl-group.bottom-right { bottom: 30px; right: 10px; }
+.map-ctrl-group.top-right { top: 10px; right: 10px; transition: right 0.3s; z-index: 5000; }
+.map-ctrl-group.bottom-right { bottom: 30px; right: 10px; transition: right 0.3s; z-index: 5000; }
+/* Controls shift to the left of the tactical panel (400px wide + 15px gap) */
+body.pota-active:not(.pota-collapsed) .map-ctrl-group.top-right { right: 415px; }
+body.pota-active:not(.pota-collapsed) .map-ctrl-group.bottom-right { right: 415px; }
 .map-ctrl-group.top-left { top: 10px; left: calc(var(--sidebar-width) + 10px); flex-direction: row; transition: left 0.3s cubic-bezier(0.4,0,0.2,1); }
 body.sidebar-collapsed .map-ctrl-group.top-left { left: 30px; }
 .map-ctrl-group.top-left .map-ctrl-btn { border-bottom: none; border-right: 1px solid var(--brd); width: 32px; font-size: 0.68rem; letter-spacing: 0.04em; }
@@ -341,6 +355,10 @@ body.sidebar-collapsed .map-ctrl-group.top-left { left: 30px; }
   background-color: var(--acc-glow) !important;
   color: var(--acc) !important;
   box-shadow: inset 0 0 10px var(--acc-glow);
+}
+
+body.globe-active #pota-toggle-row {
+  display: none !important;
 }
 
 /* Sortable table header arrows */
@@ -442,7 +460,7 @@ body.sidebar-collapsed .map-ctrl-group.top-left { left: 30px; }
   -webkit-backdrop-filter: blur(22px);
   border: 1px solid var(--brd);
   border-radius: 14px;
-  z-index: 1500;
+  z-index: 4500;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-6px) scale(0.97);
@@ -517,3 +535,86 @@ body.sidebar-collapsed .map-ctrl-group.top-left { left: 30px; }
   padding: 5px 4px 6px;
 }
 .overlay-card.active .overlay-label { color: var(--acc); }
+
+/* POTA Tactical Mode Interface */
+.pota-hud {
+  position: fixed; top: 12px; left: calc(var(--l-sb) + (100% - var(--l-sb) - var(--r-sb)) / 2);
+  transform: translate(-50%, -20px);
+  z-index: 3000; opacity: 0; pointer-events: none;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+body.pota-active .pota-hud { opacity: 1; transform: translate(-50%, 0); pointer-events: none; transition-delay: 0.2s; }
+.pota-hud-inner {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--surf), transparent 15%);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--acc);
+  box-shadow: 0 0 20px var(--acc-glow), inset 0 0 10px var(--acc-glow);
+  padding: 10px 24px; border-radius: 12px; text-align: center;
+}
+.pota-hud-label { font-size: 0.58rem; color: var(--muted); font-family: var(--font-mono); letter-spacing: 2.5px; margin-bottom: 4px; }
+.pota-hud-main { display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-weight: 800; font-size: 1.3rem; letter-spacing: 1px; }
+#pota-hud-call { color: var(--acc); }
+.pota-hud-sep { color: var(--brd2); font-weight: 300; }
+#pota-hud-dist { color: #fff; text-shadow: 0 0 10px var(--acc-glow); }
+
+/* Sidebar Command Transition — Shifting panel to the right in POTA mode */
+body.pota-active .stats-backdrop { opacity: 0 !important; pointer-events: none !important; }
+body.pota-active #panel-total.stats-modal {
+  left: auto !important; right: 20px !important; top: 20px !important; transform: none !important; bottom: 20px !important;
+  width: 380px !important; max-width: 35vw !important; height: auto !important; max-height: none !important;
+  border-radius: 16px !important; border-color: var(--acc) !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 40px var(--acc-glow) !important;
+  transition: transform 0.4s var(--cb) !important;
+}
+body.pota-collapsed #panel-total.stats-modal { transform: translateX(calc(100% + 40px)) !important; }
+body.pota-active #pota-search-container { display: flex !important; align-items: center; }
+body.pota-active #pota-collapse-btn { display: block !important; }
+body.pota-active .close-stats-btn { display: block !important; }
+
+.pota-exit-btn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: bold;
+  cursor: pointer;
+  margin-left: 20px;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+
+.pota-exit-btn:hover {
+  background: rgba(239, 68, 68, 0.4);
+  border-color: #ef4444;
+  color: #fff;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+}
+body.pota-active #panel-total.stats-modal .panel-content { max-height: none !important; flex: 1 !important; }
+body.pota-active .stats-table tbody tr.selected { background: var(--acc-glow) !important; border-left: 3px solid var(--acc); }
+body.pota-active .stats-table tbody tr.selected td { color: #fff !important; }
+body.pota-active .stats-table tbody tr { cursor: pointer; }
+
+
+#pota-collapse-btn.sidebar-tab {
+  position: absolute; top: 120px; left: -18px; 
+  width: 18px; height: 52px; border-radius: 7px 0 0 7px;
+  background: var(--surf); border: 1px solid var(--brd); border-left: 1px solid var(--brd);
+  color: var(--muted); font-size: 1rem; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  z-index: 200; transition: color 0.2s, border-color 0.2s;
+  box-shadow: -4px 0 10px rgba(0,0,0,0.3);
+}
+#pota-collapse-btn.sidebar-tab:hover { color: var(--acc); border-color: var(--acc); }
+
+/* Ensure the total panel is positioned correctly for the tab */
+body.pota-active #panel-total {
+  right: 1.5rem; top: 1.5rem; bottom: 1.5rem; height: auto; transform: none; left: auto;
+  transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.pota-active.pota-collapsed #panel-total {
+  right: -560px;
+}

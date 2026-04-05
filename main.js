@@ -20,6 +20,11 @@ function dateMatchesRange(qsoDate) {
     return true;
 }
 let heatmapMode = null; // null=off, 'rcvd'=RST_RCVD, 'sent'=RST_SENT
+let potaMode = false;
+let potaFocusCall = null;
+let potaSearchQuery = '';
+let potaPathsEnabled = false;
+let potaWarningShown = false;
 
 function parseRSTWeight(rst) {
     if (!rst || typeof rst !== 'string') return 0;
@@ -671,6 +676,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         collapseBtn?.addEventListener('click', () => toggleSidebar(true));
         expandTab?.addEventListener('click',   () => toggleSidebar(false));
 
+        // POTA Right Sidebar Collapse Logic
+        const potaCollapseBtn = document.getElementById('pota-collapse-btn');
+        const potaExpandTab   = document.getElementById('pota-expand-tab');
+        const togglePotaSidebar = (collapsed) => {
+            document.body.classList.toggle('pota-collapsed', collapsed);
+            if (potaExpandTab) potaExpandTab.style.display = collapsed ? 'flex' : 'none';
+            
+            // Sync globe if visible
+            if (globeVisible && globeInstance) {
+                const globeEl = document.getElementById('globe-container');
+                const duration = 320;
+                const start = performance.now();
+                const tick = (now) => {
+                    if (!globeEl || !globeInstance) return;
+                    globeInstance.width(globeEl.offsetWidth).height(globeEl.offsetHeight);
+                    globeInstance.renderer().render(globeInstance.scene(), globeInstance.camera());
+                    if (now - start < duration) requestAnimationFrame(tick);
+                    else forceGlobeRender(); // Final snap
+                };
+                requestAnimationFrame(tick);
+            }
+
+            // Sync Leaflet (2D)
+            setTimeout(() => mapEngine?.invalidateSize(), 420);
+            
+            // Re-frame if a station is focused
+            if (potaFocusCall && mapEngine && !globeVisible) {
+                const history = currentQSOs.filter(q => q.CALL === potaFocusCall);
+                const q = history[0];
+                const hLat = mapEngine?.homeLocation?.[0] || parseFloat(document.getElementById('my-lat').value) || 0;
+                const hLon = mapEngine?.homeLocation?.[1] || parseFloat(document.getElementById('my-lon').value) || 0;
+                if (hLat && hLon && q?.LAT && q?.LON) {
+                    const padR = collapsed ? 40 : 540;
+                    mapEngine.fitBounds([[hLat, hLon], [parseFloat(q.LAT), parseFloat(q.LON)]], { 
+                        paddingTopLeft: [40, 40],
+                        paddingBottomRight: [padR, 40]
+                    });
+                }
+            }
+        };
+        potaCollapseBtn?.addEventListener('click', () => togglePotaSidebar(true));
+        potaExpandTab?.addEventListener('click',   () => togglePotaSidebar(false));
+
+        document.getElementById('pota-btn-exit')?.addEventListener('click', () => {
+            const chk = document.getElementById('chk-pota');
+            if (chk) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
+        });
+
         document.getElementById('ui-btn-globe')?.addEventListener('click', () => {
             toggleGlobe();
         });
@@ -719,6 +772,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         _ssToggleFull?.addEventListener('click', () => _setSSToggle(false));
         _ssToggleCam?.addEventListener('click',  () => _setSSToggle(true));
         document.getElementById('ss-save')?.addEventListener('click', () => takeScreenshot(_ssCameraView));
+        
+        document.getElementById('ss-no-stats')?.addEventListener('change', (e) => {
+            const titleEl = document.getElementById('ss-title');
+            if (e.target.checked) {
+                if (titleEl) { titleEl.value = ''; titleEl.disabled = true; titleEl.style.opacity = '0.5'; }
+                ['ss-callsign', 'ss-stats', 'ss-bands', 'ss-dxcc'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.checked = false; el.disabled = true; el.parentElement.style.opacity = '0.5'; }
+                });
+            } else {
+                if (titleEl) { titleEl.disabled = false; titleEl.style.opacity = '1'; }
+                ['ss-callsign', 'ss-stats', 'ss-bands', 'ss-dxcc'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.checked = true; el.disabled = false; el.parentElement.style.opacity = '1'; }
+                });
+            }
+        });
 
         // Remove old internal map listeners
         // mapEngine.map.on('globebtnclick', toggleGlobe);
@@ -798,6 +868,55 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (savedLat) homeLatInput.value = savedLat;
             if (savedLon) homeLonInput.value = savedLon;
             if (savedLat && savedLon) mapEngine.setHomeLocation(savedLat, savedLon);
+            
+            document.getElementById('chk-pota')?.addEventListener('change', function() {
+                potaMode = this.checked;
+                document.body.classList.toggle('pota-active', potaMode);
+                if (potaMode) {
+                    // Force 2D mode as 3D is not supported in POTA Tactical
+                    if (globeVisible) toggleGlobe();
+                    
+                    if (!sidebarEl?.classList.contains('collapsed')) {
+                        toggleSidebar(true);
+                    }
+                    openStatsPanel('total');
+                    // Force hide globe button in POTA
+                    const globeBtn = document.getElementById('ui-btn-globe');
+                    if (globeBtn) globeBtn.style.setProperty('display', 'none', 'important');
+                    
+                    // show warning once per session
+                    if (!potaWarningShown) {
+                        showTacticalToast('POTA Mode may be inaccurate or work poorly without resolving or incorrect distance data.', 6000);
+                        potaWarningShown = true;
+                    }
+                    setTimeout(() => mapEngine?.invalidateSize(), 420);
+                } else {
+                    // Restore normal workflow
+                    potaFocusCall = null;
+                    potaPathsEnabled = false;
+                    const pathToggle = document.getElementById('pota-chk-lines');
+                    if (pathToggle) pathToggle.checked = false;
+                    mapEngine.setPathsVisible(false);
+                    
+                    // Reset right sidebar state if it was collapsed
+                    togglePotaSidebar(false);
+
+                    // Restore globe button
+                    const globeBtn = document.getElementById('ui-btn-globe');
+                    if (globeBtn) globeBtn.style.setProperty('display', 'flex'); // Buttons are display:flex in this UI
+                    
+                    document.getElementById('pota-hud-call').textContent = 'SELECT STATION';
+                    document.getElementById('pota-hud-dist').textContent = '0.0 KM';
+                    if (sidebarEl?.classList.contains('collapsed')) {
+                        toggleSidebar(false);
+                    }
+                    closeStatsPanels();
+                    // Reflow map to full view
+                    setTimeout(() => mapEngine?.invalidateSize(), 420);
+                    processQSOs(currentQSOs, false, true);
+                }
+            });
+
             homeLatInput.addEventListener('input', updateHome);
             homeLonInput.addEventListener('input', updateHome);
         }
@@ -1270,7 +1389,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById(`card-${type}`)?.addEventListener('click', () => openStatsPanel(type));
         });
         document.getElementById('stats-backdrop')?.addEventListener('click', closeStatsPanels);
-        document.querySelectorAll('.close-stats-btn').forEach(btn => btn.addEventListener('click', closeStatsPanels));
+        document.querySelectorAll('.close-stats-btn').forEach(btn => btn.addEventListener('click', () => {
+            if (potaMode) {
+                togglePotaSidebar(true); // Just collapse in POTA mode
+            } else {
+                closeStatsPanels();
+            }
+        }));
 
         // 3D Globe toggle
         mapEngine.map.on('globebtnclick', toggleGlobe);
@@ -1454,11 +1579,11 @@ async function takeScreenshot(cameraView = false) {
     if (btnSave) btnSave.disabled = true;
     status.textContent = 'Rendering…';
 
+    const inclNoStats  = document.getElementById('ss-no-stats')?.checked;
     const inclCallsign = document.getElementById('ss-callsign')?.checked;
     const inclStats    = document.getElementById('ss-stats')?.checked;
     const inclBands    = document.getElementById('ss-bands')?.checked;
     const inclDXCC     = document.getElementById('ss-dxcc')?.checked;
-    const inclModes    = document.getElementById('ss-modes')?.checked;
     const ssTitle      = document.getElementById('ss-title')?.value?.trim() || '';
 
     try {
@@ -1487,10 +1612,6 @@ async function takeScreenshot(cameraView = false) {
         currentQSOs.forEach(q => { const c = q.COUNTRY||q.DXCC||''; if(c) dxccCounts[c]=(dxccCounts[c]||0)+1; });
         const dxccSorted = Object.entries(dxccCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
 
-        const modeCounts = {};
-        currentQSOs.forEach(q => { const m = q.MODE||''; if(m) modeCounts[m]=(modeCounts[m]||0)+1; });
-        const modesSorted = Object.entries(modeCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
-
         // ── Pre-load flag images for countries section ───────────────────────
         const flagImgs = {};
         if (inclDXCC && dxccSorted.length) {
@@ -1512,9 +1633,10 @@ async function takeScreenshot(cameraView = false) {
         const LINE = 20;
         const GAP  = 14;
         const HEAD = 28;
-        const PW   = 260;
+        const PW   = inclNoStats ? 0 : 260;
 
         const drawLegend = (ctx, lxL, outH) => {
+            if (PW === 0) return;
             let cy = PAD;
 
             // Custom title bar
@@ -1611,12 +1733,6 @@ async function takeScreenshot(cameraView = false) {
                         drawBar(_ctryAbbr(c), n, dMax, cAcc);
                     }
                 });
-                cy += GAP;
-            }
-            if (inclModes && modesSorted.length) {
-                drawHeading('Modes');
-                const mMax = modesSorted[0][1];
-                modesSorted.forEach(([m, n]) => drawBar(m, n, mMax, '#a78bfa'));
                 cy += GAP;
             }
 
@@ -2104,6 +2220,7 @@ function _buildHeatPoints() {
         if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
         if (!activeBands.has(q.BAND?.toUpperCase())) return;
         if (!dateMatchesRange(q.QSO_DATE)) return;
+        if (potaMode && potaFocusCall && q.CALL !== potaFocusCall) return;
 
         const weight = parseRSTWeight(q[rstKey] || '');
         if (weight <= 0) return;
@@ -2160,6 +2277,7 @@ function _rebuildGlobeContacts() {
         if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
         if (!activeBands.has(q.BAND?.toUpperCase())) return;
         if (!dateMatchesRange(q.QSO_DATE)) return;
+        if (potaMode && potaFocusCall && q.CALL !== potaFocusCall) return;
         if (!contacts[q.CALL]) contacts[q.CALL] = {
             lat: parseFloat(q.LAT), lng: parseFloat(q.LON),
             call: q.CALL, country: q.COUNTRY || q.DXCC || '',
@@ -2342,7 +2460,7 @@ function showGlobePopup(point, clientX, clientY) {
         const mode    = qso.MODE || 'N/A';
         const bandColor = BAND_COLORS[band] || 'var(--acc)';
         const iso     = DXCC_MAP[(country).toUpperCase()] || getISOFromCallsign(call);
-        const flagHtml = iso ? buildFlagImg(iso, country, 40, 'width:100%;height:100%;object-fit:cover;border-radius:2px;') : '📡';
+        const flagHtml = iso ? buildFlagImg(iso, country, 40, 'width:100%;height:100%;object-fit:cover;') : '📡';
 
         let distStr = '';
         if (hLat && hLon && qso.LAT && qso.LON)
@@ -2514,7 +2632,11 @@ function renderTotalPanel(container) {
         }
     });
 
-    const data = Object.values(groups);
+    let data = Object.values(groups);
+    if (potaMode && potaSearchQuery) {
+        const q = potaSearchQuery.toUpperCase();
+        data = data.filter(d => d.call.toUpperCase().includes(q) || d.country.toUpperCase().includes(q));
+    }
     data.sort((a, b) => {
         const av = a[totalSortCol], bv = b[totalSortCol];
         if (totalSortCol === 'count') return (bv - av) * totalSortDir;
@@ -2533,7 +2655,8 @@ function renderTotalPanel(container) {
         const iso = (DXCC_MAP[(s.country || '').toUpperCase()] || getISOFromCallsign(s.call) || '').toLowerCase();
         const flagHtml = buildFlagImg(iso, s.country, 40, 'height:13px;border-radius:2px;vertical-align:middle;margin-right:5px;', "this.onerror=null;this.style.display='none';");
         const bandColor = BAND_COLORS[s.band?.toUpperCase()] || 'var(--acc)';
-        return `<tr>
+        const isSelected = potaMode && potaFocusCall === s.call;
+        return `<tr data-call="${s.call}" class="${isSelected ? 'selected' : ''}">
             <td style="color:var(--acc);font-weight:bold;">${qrzLink(s.call, s.call)}</td>
             <td>${flagHtml}${s.country || ISO_TO_NAME[iso] || ''}</td>
             <td style="color:${bandColor};font-weight:bold;">${s.band}</td>
@@ -2553,9 +2676,114 @@ function renderTotalPanel(container) {
                 <th data-sort="lastDate">Last QSO${arrow('lastDate')}</th>
                 <th data-sort="count">QSOs${arrow('count')}</th>
             </tr></thead>
-            <tbody>${rows}</tbody>
+            <tbody id="pota-list-body">${rows}</tbody>
         </table>
     </div>`;
+
+    const listBody = container.querySelector('#pota-list-body');
+    listBody?.querySelectorAll('tr').forEach(tr => {
+        tr.addEventListener('click', (e) => {
+            // Don't trigger if they clicked the QRZ link specifically
+            if (e.target.tagName === 'A') return;
+            const call = tr.dataset.call;
+            if (potaMode) {
+                if (potaFocusCall === call) {
+                    // Click-to-Deselect logic: Reset view
+                    potaFocusCall = null;
+                    listBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                    document.getElementById('pota-hud-call').textContent = 'SELECT STATION';
+                    document.getElementById('pota-hud-dist').textContent = '0.0 KM';
+                    processQSOs(currentQSOs, true, true); 
+                    return;
+                }
+                
+                potaFocusCall = call;
+                
+                // Automatically enable lines when a contact is focused
+                potaPathsEnabled = true;
+                const pathToggle = document.getElementById('pota-chk-lines');
+                if (pathToggle) pathToggle.checked = true;
+                mapEngine.setPathsVisible(true);
+
+                // Highlight row
+                listBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                tr.classList.add('selected');
+                
+                // Update HUD
+                document.getElementById('pota-hud-call').textContent = call;
+                const contact = data.find(d => d.call === call);
+                // Get accurate Home coordinates from the live engine or inputs
+                const hLat = mapEngine?.homeLocation?.[0] || parseFloat(document.getElementById('my-lat').value) || 0;
+                const hLon = mapEngine?.homeLocation?.[1] || parseFloat(document.getElementById('my-lon').value) || 0;
+                
+                // Get focus station history
+                const history = currentQSOs.filter(q => q.CALL === call);
+                const q = history[0];
+                
+                if (hLat && hLon && q.LAT && q.LON) {
+                    const d = calculateDistance(hLat, hLon, parseFloat(q.LAT), parseFloat(q.LON), currentUnits);
+                    document.getElementById('pota-hud-dist').textContent = `${d.toFixed(1)} ${currentUnits.toUpperCase()}`;
+                    
+                    // Tactical Framing: Both stations in view
+                    if (mapEngine && !globeVisible) {
+                        _pathsDirty = true;
+                        const isCollapsed = document.body.classList.contains('pota-collapsed');
+                        const padR = isCollapsed ? 40 : 540;
+                        
+                        // Create bounds from the two station points
+                        const pts = [[hLat, hLon], [parseFloat(q.LAT), parseFloat(q.LON)]];
+                        
+                        // We use the Leaflet constructor to create bounds we can manipulate
+                        if (window.L) {
+                            const b = L.latLngBounds(pts);
+                            // Padding the bounds by 0.5 (50% on each side) doubles the span, 
+                            // which effectively zooms out by exactly 1 level in the final fit.
+                            const paddedBounds = b.pad(0.8); // 0.8 provides a slightly more generous contextual buffer than 0.5
+                            
+                            mapEngine.fitBounds(paddedBounds, { 
+                                paddingTopLeft: [40, 40],
+                                paddingBottomRight: [padR, 40],
+                                animate: true,
+                                duration: 0.8
+                            });
+                        } else {
+                            // Fallback if L is not globally available (though it should be)
+                            mapEngine.fitBounds(pts, { 
+                                paddingTopLeft: [40, 40],
+                                paddingBottomRight: [padR, 40]
+                            });
+                        }
+                    }
+                } else {
+                    document.getElementById('pota-hud-dist').textContent = '---';
+                }
+
+                processQSOs(currentQSOs, false, true);
+            }
+        });
+    });
+
+    const searchInput = document.getElementById('pota-search');
+    if (searchInput) {
+        searchInput.value = potaSearchQuery;
+        searchInput.addEventListener('input', (e) => {
+            potaSearchQuery = e.target.value;
+            renderTotalPanel(container);
+        });
+        // Auto-focus search if in POTA mode and just opened
+        if (potaMode && !potaSearchQuery) searchInput.focus();
+    }
+
+    const pathToggle = document.getElementById('pota-chk-lines');
+    if (pathToggle) {
+        pathToggle.checked = potaPathsEnabled;
+        pathToggle.addEventListener('change', (e) => {
+            potaPathsEnabled = e.target.checked;
+            mapEngine.setPathsVisible(potaPathsEnabled);
+            processQSOs(currentQSOs, false, true); // Force rebuild with paths
+            if (globeVisible && globeInstance) updateGlobeArcs();
+        });
+    }
 
     container.querySelectorAll('th[data-sort]').forEach(th => {
         th.addEventListener('click', () => {
@@ -2652,18 +2880,23 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
     const doPaths = _pathsDirty;
     // Always clear markers so old ones never persist
     mapEngine.clear();
-    if (doPaths) {
+    
+    // In POTA mode, we might want to force paths regardless of the global state
+    const forcePathsForPota = potaMode && potaPathsEnabled;
+    
+    if (doPaths || forcePathsForPota) {
         mapEngine.clearPaths();
         _pathsDirty = false;
     }
-    // Only rebuild paths into the layer when flagged dirty
-    mapEngine._skipPathBuild = !doPaths;
+    // Only rebuild paths into the layer when flagged dirty or forced by POTA
+    mapEngine._skipPathBuild = !(doPaths || forcePathsForPota);
     const filtered = qsos.filter(q => {
         const mSearch = !searchQuery || q.CALL.toUpperCase().startsWith(searchQuery);
         const mDXCC = !selectedDXCC || (q.COUNTRY || q.DXCC) === selectedDXCC;
         const mBand = activeBands.has(q.BAND?.toUpperCase());
         const mDate = dateMatchesRange(q.QSO_DATE);
-        return mSearch && mDXCC && mBand && mDate;
+        const mPota = !potaMode || !potaFocusCall || q.CALL === potaFocusCall;
+        return mSearch && mDXCC && mBand && mDate && mPota;
     });
     const groups = {};
     filtered.forEach(q => {

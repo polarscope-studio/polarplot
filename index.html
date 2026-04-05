@@ -329,7 +329,7 @@
       
       /* Tactical Toast / Advisory */
       .tactical-toast {
-        position: fixed; bottom: 28px; left: calc(var(--sidebar-width) + (100vw - var(--sidebar-width)) / 2); transform: translateX(-50%) translateY(20px);
+        position: fixed; bottom: 28px; left: calc(var(--l-sb) + (100vw - var(--l-sb) - var(--r-sb)) / 2 + 40px); transform: translateX(-50%) translateY(20px);
         z-index: 100000; padding: 13px 22px;
         background: color-mix(in srgb, var(--surf), transparent 15%);
         backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -548,7 +548,17 @@
           <div class="splash-pane" id="splash-changelog">
             <h3>Version History</h3>
             <div class="splash-changelog-entry">
-              <div class="splash-changelog-ver">v1.7.0 — Latest</div>
+              <div class="splash-changelog-ver">v1.8.0 — Latest</div>
+              <ul>
+                <li><strong>POTA Tactical Mode</strong> — Immersive asymmetric layout with shifted station framing for optimal planning visibility</li>
+                <li><strong>Dynamic HUD Centering</strong> — Tactical Focus HUD now calculates true center between active sidebars in real-time</li>
+                <li><strong>Contextual UI Safety</strong> — Dynamic hiding of the 3D globe control during POTA, and POTA controls during 3D sessions</li>
+                <li><strong>Clean Map Export</strong> — New screenshot toggle to disable all stat panels for a pure, distraction-free map visualization</li>
+                <li><strong>Session Intelligence</strong> — Automatic state reset (paths, HUD, and map offsets) when exiting tactical mode</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.7.0</div>
               <ul>
                 <li><strong>Signal Heatmap Visualization</strong> — Added a high-performance heat layer to the 2D map to visualize signal quality distribution across the globe</li>
                 <li><strong>Precision Mapping</strong> — Accurate conversion for FT8/FT4 SNR (-30 to +20dB) and Voice/CW RS (11-59) to a standardized 0.05-1.0 heat intensity scale</li>
@@ -795,7 +805,7 @@ Website: https://polarplot.net</div>
       </div>
     </div>
 
-    <button id="sidebar-expand-tab" title="Expand sidebar" aria-label="Expand sidebar">&#8250;</button>
+    <button id="sidebar-expand-tab" class="sidebar-expand-tab" title="Expand sidebar" aria-label="Expand sidebar">&#8250;</button>
     <div id="app">
       <aside id="sidebar" class="sidebar">
         <button id="sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">&#8249;</button>
@@ -893,6 +903,13 @@ Website: https://polarplot.net</div>
             <button id="hm-mode-sent" class="scard-btn" style="padding: 2px; font-size: 0.6rem; letter-spacing: 0.05em;">SENT</button>
           </div>
 
+          <div id="pota-toggle-row" class="field-group" style="flex-direction:row;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0.4rem;margin-top:10px;padding-top:10px;border-top:1px solid var(--brd);">
+            <label for="chk-pota" style="margin-bottom:0;cursor:pointer;color:var(--acc);font-weight:700;display:flex;align-items:center;gap:6px;">
+              POTA Tactical Mode
+            </label>
+            <label class="studio-slider"><input type="checkbox" id="chk-pota"><span class="slider"></span></label>
+          </div>
+
           <div style="margin-top:14px;">
             <label style="font-size:0.72rem;font-family:var(--font-mono);color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;">Date Range Filter</label>
             <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
@@ -919,7 +936,7 @@ Website: https://polarplot.net</div>
           </div>
         </section>
 
-        <section class="controls-section">
+        <section class="controls-section" style="padding-left: 15px;">
           <h2 class="section-title">Spectrum Filter</h2>
           <div id="band-filter" class="band-chips">
             <button class="band-chip active" data-band="2200M" style="--chip-color: #4B0082;">2200m</button>
@@ -951,7 +968,7 @@ Website: https://polarplot.net</div>
           </div>
         </section>
 
-        <section class="controls-section">
+        <section class="controls-section" style="padding-left: 15px;">
           <h2 class="section-title">Import Contacts</h2>
           <div id="dropzone" class="dropzone">
             <i class="icon-upload">📁</i>
@@ -980,7 +997,7 @@ Website: https://polarplot.net</div>
           </div>
         </div>
 
-        <section class="controls-section station-search" style="margin-top: 1rem;">
+        <section class="controls-section station-search" style="margin-top: 1rem; padding-left: 15px;">
           <h2 class="section-title" style="display:flex;align-items:center;gap:6px;">QRZ Research Node
             <span class="pwd-info-icon" id="qrz-info-icon">ℹ</span>
           </h2>
@@ -1074,7 +1091,6 @@ Website: https://polarplot.net</div>
         </div>
       </div>
     </div>
-
     <!-- Biography Vault Panel (Frosted Center Modal) -->
     <aside id="history-panel" class="station-panel">
       <div class="panel-header">
@@ -1139,17 +1155,40 @@ Website: https://polarplot.net</div>
     <!-- Stats Backdrop -->
     <div id="stats-backdrop" class="stats-backdrop"></div>
 
+    <!-- POTA Tactical HUD -->
+    <div id="pota-hud" class="pota-hud">
+      <div class="pota-hud-inner">
+        <div class="pota-hud-label">TACTICAL STATION FOCUS</div>
+        <div class="pota-hud-main">
+          <span id="pota-hud-call">SELECT STATION</span>
+          <span class="pota-hud-sep">|</span>
+          <span id="pota-hud-dist">0.0 KM</span>
+          <button id="pota-btn-exit" class="pota-exit-btn" title="Exit POTA Tactical Mode">✕ EXIT</button>
+        </div>
+      </div>
+    </div>
+
+
     <!-- Stats: Total Contacts Panel -->
     <aside id="panel-total" class="station-panel stats-modal">
       <div class="panel-header">
-        <div style="display:flex;align-items:center;gap:12px;">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;">
           <div class="p-icon">📋</div>
-          <div>
+          <div style="flex:1;">
             <h2>All Contacts</h2>
             <p class="hist-location">Unique callsigns worked</p>
           </div>
+          <div id="pota-search-container" style="display:none;margin-right:15px;width:180px;display:flex;align-items:center;gap:10px;">
+            <label style="display:flex;align-items:center;gap:4px;font-size:0.65rem;color:var(--muted);white-space:nowrap;cursor:pointer;">
+              <input type="checkbox" id="pota-chk-lines" style="accent-color:var(--acc);width:12px;height:12px;cursor:pointer;">
+              LINES
+            </label>
+            <input type="text" id="pota-search" class="field-input" placeholder="🔍 Search..." style="padding:4px 10px;font-size:0.75rem;height:28px;background:rgba(0,0,0,0.2);">
+          </div>
         </div>
-        <button class="close-btn close-stats-btn">×</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="pota-collapse-btn" class="sidebar-tab side-tab" title="Collapse Panel">›</button>
+        </div>
       </div>
       <div class="panel-content" id="panel-total-content" style="padding:0;"></div>
     </aside>
@@ -1340,11 +1379,11 @@ Website: https://polarplot.net</div>
           <input type="text" id="ss-title" placeholder="Screenshot title (e.g. POTA, SOTA, Contest...)" maxlength="40" style="width:100%;box-sizing:border-box;padding:8px 12px;background:var(--surf2);border:1px solid var(--brd);border-radius:6px;color:var(--text);font-family:var(--font-mono);font-size:0.78rem;outline:none;transition:border-color 0.15s;" onfocus="this.style.borderColor='var(--acc)'" onblur="this.style.borderColor='var(--brd)'">
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:22px;">
+          <label class="ss-check-row" style="border-color:var(--acc);background:rgba(56,189,248,0.05);"><input type="checkbox" id="ss-no-stats"><span>No Statistics (Clean Map)</span></label>
           <label class="ss-check-row"><input type="checkbox" id="ss-callsign" checked><span>Station Callsign &amp; Info</span></label>
           <label class="ss-check-row"><input type="checkbox" id="ss-stats" checked><span>QSO Statistics</span></label>
           <label class="ss-check-row"><input type="checkbox" id="ss-bands" checked><span>Band Breakdown</span></label>
           <label class="ss-check-row"><input type="checkbox" id="ss-dxcc" checked><span>Top Countries Worked</span></label>
-          <label class="ss-check-row"><input type="checkbox" id="ss-modes"><span>Mode Breakdown</span></label>
         </div>
         <div style="display:flex;gap:10px;flex-direction:column;">
           <div style="display:flex;border:1px solid var(--brd);border-radius:6px;overflow:hidden;">
@@ -1375,6 +1414,9 @@ Website: https://polarplot.net</div>
     </div>
 
     <!-- Main Logic -->
+    <!-- POTA Expand Tab -->
+    <button id="pota-expand-tab" class="sidebar-expand-tab" style="left:auto;right:0;border-left:1px solid var(--brd);border-right:none;border-radius:7px 0 0 7px;display:none;z-index:999999;" title="Restore POTA Panel">‹</button>
+
     <script src="main.js" type="module"></script>
   </body>
 </html>

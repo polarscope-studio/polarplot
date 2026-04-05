@@ -83,6 +83,21 @@ Live demo: **[Showcase Video](https://www.youtube.com/watch?v=MATlVQjMNnM)**
 <br><br>
 
 
+### 📡 POTA Tactical Command Mode
+
+[PHOTO PLACEHOLDER]
+
+- **Immersive Asymmetric Layout** — Dynamically shifts the map center to focus on tactical planning while maintaining visibility of the station hunt panel
+- **Automated Propagation Logic** — Geodesics and Great Circle paths now render automatically upon selecting a station, instantly visualizing skip distance
+- **Dynamic HUD Centering** — A specialized Tactical Focus HUD that automatically recalculates its position to stay perfectly centered between active sidebars
+- **Context-Aware UI Safety** — Intelligent interface management that hides incompatible 3D controls during tactical sessions
+- **Session Intelligence** — Automatic state reset (paths, HUD, and map offsets) when exiting tactical mode for a seamless return to standard mapping
+
+
+---
+<br><br>
+
+
 ### 📋 Contact Cards & Popups
 
 <img src="https://github.com/user-attachments/assets/e28c781d-ace7-445e-b43e-aef4fa39c0fa" width="779" height="461">
