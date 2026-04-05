@@ -42,7 +42,7 @@ export class QRZService {
       const error = xml.querySelector('Error');
       if (error) {
         const msg = error.textContent;
-        if (msg.includes('Session expired') || msg.includes('Invalid session')) {
+        if (msg.includes('Session expired') || msg.includes('Invalid session') || msg.includes('Session Timeout')) {
           this.sessionKey = null;
           localStorage.removeItem('qrz_session_key');
           await this.login();
