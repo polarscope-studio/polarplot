@@ -16,12 +16,7 @@ export class MapEngine {
       maxBoundsViscosity: 1.0
     }).setView([20, 0], 2);
 
-    // Custom pane below overlayPane (400) so heatmap never blocks marker clicks
-    this.map.createPane('heatPane');
-    this.map.getPane('heatPane').style.zIndex = 350;
-    this.map.getPane('heatPane').style.pointerEvents = 'none';
-
-    // Add Dark Matter tiles (sleek tactical look)
+    // Initialize Tiles
     this.tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
       updateWhenIdle: false,
@@ -341,10 +336,13 @@ export class MapEngine {
     const points = this._heatPoints;
 
     // High max zoomed out = cool/subtle. Low max zoomed in = warm/vivid.
-    const max = Math.max(0.65, 4.5 - zoom * 0.3);
+    const max = Math.max(0.6, 4.2 - zoom * 0.3);
+
+    // Dynamic Layering: At max zoom out, heatmap is on top. As you zoom in, dots are on top.
+    const insertBefore = zoom > 3;
 
     this.heatLayer = L.heatLayer(points, {
-        radius: 26, blur: 18, maxZoom: 6, max, pane: 'heatPane',
+        radius: 26, blur: 18, maxZoom: 6, max, pane: 'overlayPane', insertBefore,
         gradient: { 0.0: '#00bfff', 0.38: '#00ff88', 0.62: '#ffff00', 0.82: '#ff8800', 1.0: '#ff6000' }
     });
     if (this.heatVisible) this.heatLayer.addTo(this.map);
