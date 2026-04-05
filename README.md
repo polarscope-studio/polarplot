@@ -6,6 +6,8 @@ Polarplot is a browser-based ADIF log visualizer for amateur radio operators. Dr
 
 Live at **[https://polarplot.net](https://polarplot.net)**
 
+Live demo: **[Showcase Video](https://www.youtube.com/watch?v=MATlVQjMNnM)**
+
 ---
 
 ## Features
@@ -60,6 +62,21 @@ Live at **[https://polarplot.net](https://polarplot.net)**
 - **FPV Mode** — first-person perspective, locks your home location to the bottom of the globe
 - Smooth camera controls with inertia and damping
 - Click any contact dot or arc for the full station popup
+
+
+---
+<br><br>
+
+
+### 🔥 Signal Heatmap
+
+[PHOTO PLACEHOLDER]
+
+- **Heat Intensity Rendering** — Visualizes signal strength using a color gradient from deep blue (weak) to blazing red (extremely strong)
+- **Automatic Scaling** — Supports both FT8/FT4 SNR (-30 to +20dB) and standard Voice/CW RS (11 to 59) reports
+- **Sent vs Received Mode** — Toggle the map live to see how *well* you were heard versus how *well* you were hearing others
+- **Location Calibration** — Intelligent deduplication ensures that high-density cities show their **best** signal quality rather than just summing up station density
+- **Recency Filter** — Heatmap data is pulled from the most recent QSO at each location to reveal current propagation trends
 
 
 ---

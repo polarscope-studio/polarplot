@@ -548,7 +548,18 @@
           <div class="splash-pane" id="splash-changelog">
             <h3>Version History</h3>
             <div class="splash-changelog-entry">
-              <div class="splash-changelog-ver">v1.6.0 — Latest</div>
+              <div class="splash-changelog-ver">v1.7.0 — Latest</div>
+              <ul>
+                <li><strong>Signal Heatmap Visualization</strong> — Added a high-performance heat layer to the 2D map to visualize signal quality distribution across the globe</li>
+                <li><strong>Precision Mapping</strong> — Accurate conversion for FT8/FT4 SNR (-30 to +20dB) and Voice/CW RS (11-59) to a standardized 0.05-1.0 heat intensity scale</li>
+                <li><strong>Heat Calibration</strong> — Implemented location-based deduplication to prevent "heat inflation" in high-density areas; heat now reflects peak signal quality, not just station count</li>
+                <li><strong>Sent / Received Toggle</strong> — Real-time segmented control to switch the heatmap between your reported signal (Sent) and the signal you received (RCVD)</li>
+                <li><strong>Enhanced Popups</strong> — Station popups now explicitly show both Sent and Received reports (e.g., S: 59 / R: 59) for every contact</li>
+                <li><strong>Smart Recency Logic</strong> — Heatmap points are derived from the most recent contact at each location to reflect current band conditions</li>
+              </ul>
+            </div>
+            <div class="splash-changelog-entry">
+              <div class="splash-changelog-ver">v1.6.0</div>
               <p style="font-size:0.78rem;color:var(--muted);margin:6px 0 10px;font-style:italic;">Big thanks to DJ0MA for being the first beta tester of Polarplot, and helping me fix many bugs!</p>
               <ul>
                 <li>Dedicated Cloudflare Worker proxy — QRZ resolve now works out of the box for all users, no activation required</li>
@@ -739,8 +750,9 @@
           <span class="splash-footer-note">POLARPLOT // CREATED & DESIGNED <a href="https://www.qrz.com/db/M7PXZ" target="_blank" rel="noopener" style="color:#38bdf8;text-decoration:none;opacity:0.7;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">M7PXZ</a></span>
           <button class="splash-enter" onclick="closeSplash()">ENTER ›</button>
         </div>
+      </div>
 
-        <!-- License Modal -->
+      <!-- License Modal -->
         <div id="license-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);" onclick="if(event.target===this)this.style.display='none'">
           <div style="background:rgba(13,18,32,0.97);border:1px solid rgba(56,189,248,0.2);border-radius:12px;padding:28px 32px;max-width:640px;width:90%;max-height:75vh;display:flex;flex-direction:column;gap:16px;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
             <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -866,6 +878,19 @@ Website: https://polarplot.net</div>
                 <input type="checkbox" id="chk-clusters" checked>
                 <span class="slider"></span>
             </label>
+          </div>
+
+          <div id="heatmap-control-row" class="field-group" style="flex-direction:row;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0.4rem;margin-top:10px;">
+            <label for="chk-heatmap" style="margin-bottom:0;cursor:pointer;color:var(--text);display:flex;align-items:center;gap:6px;">
+              Signal Heatmap
+              <span class="pwd-info-icon" id="hm-info-icon">ℹ</span>
+            </label>
+            <label class="studio-slider"><input type="checkbox" id="chk-heatmap"><span class="slider"></span></label>
+          </div>
+
+          <div id="heatmap-toggle-container" class="mode-tabs" style="display: none; margin-top: 0; margin-bottom: 0.8rem; height: 26px; padding: 2px;">
+            <button id="hm-mode-rcvd" class="scard-btn active" style="padding: 2px; font-size: 0.6rem; letter-spacing: 0.05em;">RECEIVED</button>
+            <button id="hm-mode-sent" class="scard-btn" style="padding: 2px; font-size: 0.6rem; letter-spacing: 0.05em;">SENT</button>
           </div>
 
           <div style="margin-top:14px;">
@@ -1340,7 +1365,17 @@ Website: https://polarplot.net</div>
       .ss-check-row:hover { border-color:color-mix(in srgb,var(--acc),transparent 50%); }
       .ss-check-row input[type=checkbox] { accent-color:var(--acc);width:14px;height:14px;flex-shrink:0; }
     </style>
+    <!-- Signal Heatmap info tooltip -->
+    <div id="hm-tooltip" class="pwd-tooltip" style="display: none;">
+      <div class="pwd-tooltip-header">Signal Heatmap Logic</div>
+      <div class="pwd-tooltip-content">
+        If multiple QSOs are present at the same location, the heat intensity is taken from the **most recent** contact. 
+        <br><br>
+        This reveals current band conditions and prevents density-based bias.
+      </div>
+    </div>
 
-    <script type="module" src="/main.js"></script>
+    <!-- Main Logic -->
+    <script src="main.js" type="module"></script>
   </body>
 </html>

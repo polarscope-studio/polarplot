@@ -226,6 +226,9 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   100% { transform: scale(1); }
 }
 
+/* Heatmap canvas must never capture pointer events — dots beneath must stay clickable */
+.leaflet-heatmap-layer { pointer-events: none !important; }
+
 /* Leaflet UI Overrides (Total Eclipse) */
 .leaflet-bar { border: 1px solid var(--brd) !important; box-shadow: none !important; border-radius: 8px !important; overflow: hidden; }
 .leaflet-bar a { 

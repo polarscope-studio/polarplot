@@ -19,6 +19,38 @@ function dateMatchesRange(qsoDate) {
     if (dateTo   && d > dateTo)   return false;
     return true;
 }
+let heatmapMode = null; // null=off, 'rcvd'=RST_RCVD, 'sent'=RST_SENT
+
+function parseRSTWeight(rst) {
+    if (!rst || typeof rst !== 'string') return 0;
+    const t = rst.trim();
+    
+    // FT8/FT4 SNR: starts with +/- or is a small signed integer in range -35..+35
+    if (t.startsWith('+') || t.startsWith('-') || (t.length <= 3 && /^-?\d+$/.test(t) && Math.abs(parseInt(t, 10)) <= 35)) {
+        const snr = parseInt(t, 10);
+        if (isNaN(snr)) return 0;
+        // Calibrated SNR Scale:
+        // -30 (min) -> 0.05
+        // -15 (weak) -> 0.25
+        // -5  (fair) -> 0.55
+        // 0   (good) -> 0.75
+        // +10 (strong) -> 0.95
+        // +20 (max) -> 1.0
+        return Math.max(0.05, Math.min(1, (snr + 30) / 50));
+    }
+    
+    // Standard RS (Voice/CW): e.g. 59, 55, 599
+    const s = t.replace(/[^0-9]/g, '');
+    if (s.length >= 2) {
+        const rDigit = parseInt(s[0], 10);
+        const sDigit = parseInt(s[1], 10);
+        if (isNaN(rDigit) || isNaN(sDigit)) return 0;
+        const score = (Math.max(1, Math.min(5, rDigit)) - 1) * 9 + Math.max(1, Math.min(9, sDigit));
+        return Math.max(0.05, Math.min(1, score / 45));
+    }
+    return 0;
+}
+
 let isResolving = false;
 let currentUnits = localStorage.getItem('polarlog_units') || 'km';
 
@@ -841,6 +873,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                     updateGlobeDots();
                 }
             });
+        }
+
+        // Signal Heatmap toggle
+        const chkHeatmap  = document.getElementById('chk-heatmap');
+        const hmToggleContainer = document.getElementById('heatmap-toggle-container');
+        const hmBtnRcvd = document.getElementById('hm-mode-rcvd');
+        const hmBtnSent = document.getElementById('hm-mode-sent');
+
+        if (chkHeatmap) {
+            chkHeatmap.addEventListener('change', (e) => {
+                const checked = e.target.checked;
+                heatmapMode = checked ? (hmBtnRcvd?.classList.contains('active') ? 'rcvd' : 'sent') : null;
+                if (hmToggleContainer) hmToggleContainer.style.display = checked ? 'flex' : 'none';
+                updateHeatmap();
+            });
+            // Synchronization Pulse: Ensure initial state reflects reality
+            if (chkHeatmap.checked) {
+                heatmapMode = hmBtnRcvd?.classList.contains('active') ? 'rcvd' : 'sent';
+                if (hmToggleContainer) hmToggleContainer.style.display = 'flex';
+            }
+        }
+        
+        if (hmBtnRcvd && hmBtnSent) {
+            const toggleHm = (mode) => {
+                heatmapMode = mode;
+                hmBtnRcvd.classList.toggle('active', mode === 'rcvd');
+                hmBtnSent.classList.toggle('active', mode === 'sent');
+                updateHeatmap();
+            };
+            hmBtnRcvd.onclick = () => toggleHm('rcvd');
+            hmBtnSent.onclick = () => toggleHm('sent');
         }
 
         // Block Visual Options interactions when no log is loaded
@@ -1769,14 +1832,33 @@ function toggleGlobe() {
             globeInstance.width(globeEl.offsetWidth).height(globeEl.offsetHeight);
             updateGlobeData();
         }
+        if (heatmapMode) updateHeatmap();
+
+        // 3D: Hide signal heatmap toggle (since it doesn't work on globe)
+        document.getElementById('heatmap-control-row').style.display = 'none';
+        document.getElementById('heatmap-toggle-container').style.display = 'none';
+
     } else {
         globeEl.classList.remove('active');
         mapEl.style.display = '';
         mapEngine.map.invalidateSize();
         document.getElementById('overlay-picker')?.classList.remove('visible');
+        
+        // Restore signal heatmap toggle for 2D map
+        document.getElementById('heatmap-control-row').style.display = 'flex';
+        const hmToggle = document.getElementById('chk-heatmap');
+        if (hmToggle && hmToggle.checked) {
+            document.getElementById('heatmap-toggle-container').style.display = 'flex';
+        }
+
         // Dismiss 3D globe popup and contact cards
         hideGlobePopup();
         document.getElementById('history-panel')?.classList.remove('visible');
+        // Restore 2D heatmap if active
+        if (heatmapMode) {
+            if (globeInstance) globeInstance.heatmapsData([]);
+            updateHeatmap();
+        }
     }
 }
 
@@ -2009,6 +2091,63 @@ let _globeHLat = 0, _globeHLon = 0, _globeHasHome = false;
 let _globePopupTs = 0;
 let _globePopupGeoPoint = null; // { lat, lng } of currently open popup contact
 
+function _buildHeatPoints() {
+    // 1. Group by coordinates to find the most recent signal at each physical point.
+    // 2. This prevents high density areas from looking hotter than a single point,
+    //    and ensures the heat reflects current conditions as requested.
+    const locMap = new Map(); // "lat,lon" -> { weight, timestamp }
+    const rstKey = heatmapMode === 'sent' ? 'RST_SENT' : 'RST_RCVD';
+
+    currentQSOs.forEach(q => {
+        if (!q.LAT || !q.LON) return;
+        if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return;
+        if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
+        if (!activeBands.has(q.BAND?.toUpperCase())) return;
+        if (!dateMatchesRange(q.QSO_DATE)) return;
+
+        const weight = parseRSTWeight(q[rstKey] || '');
+        if (weight <= 0) return;
+
+        const lat = parseFloat(q.LAT);
+        const lon = parseFloat(q.LON);
+        const locKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+        
+        // Use QSO_DATE + TIME_ON as a comparable timestamp (YYYYMMDDHHMMSS)
+        const timestamp = (q.QSO_DATE || '00000000') + (q.TIME_ON || '000000');
+        
+        const existing = locMap.get(locKey);
+        if (!existing || timestamp >= existing.ts) {
+            locMap.set(locKey, { lat, lon, w: weight, ts: timestamp });
+        }
+    });
+
+    return Array.from(locMap.values()).map(pt => [pt.lat, pt.lon, pt.w]);
+}
+
+function updateHeatmap() {
+    if (!heatmapMode) {
+        mapEngine?.setHeatmapVisible(false);
+        if (globeInstance) globeInstance.heatmapsData([]);
+        return;
+    }
+    const points = _buildHeatPoints();
+    if (!globeVisible) {
+        mapEngine?.setHeatmapData(points);
+        mapEngine?.setHeatmapVisible(true);
+    } else {
+        mapEngine?.setHeatmapVisible(false);
+        if (globeInstance) {
+            const globePoints = points.map(([lat, lng, w]) => ({ lat, lng, weight: w }));
+            globeInstance
+                .heatmapsData([{ id: 'rst', points: globePoints, bandwidth: 5,
+                    colorFn: t => `rgba(${Math.round(t*255)},100,${Math.round((1-t)*255)},${Math.max(0.05,t*0.7)})`,
+                    size: 0.5 }])
+                .heatmapPointLat('lat').heatmapPointLng('lng').heatmapPointWeight('weight');
+            globeInstance.resumeAnimation();
+        }
+    }
+}
+
 function _rebuildGlobeContacts() {
     const homeLoc = mapEngine?.homeLocation;
     _globeHLat = homeLoc?.[0] || 0;
@@ -2043,7 +2182,7 @@ function updateGlobeDots() {
     const clusteringOn = !isFiltered && (document.getElementById('chk-clusters')?.checked ?? true);
 
     const rawContacts = _globeContactList.map(c => ({
-        lat: c.lat, lng: c.lng, color: BAND_COLORS[c.band] || '#38bdf8',
+        lat: c.lat, lng: c.lng, color: BAND_COLORS[c.band?.toUpperCase()] || '#38bdf8',
         clusterSize: 1, count: c.count, band: c.band,
         qsoData: c.qsos, call: c.call, country: c.country
     }));
@@ -2126,6 +2265,7 @@ function updateGlobeData() {
     _rebuildGlobeContacts();
     updateGlobeDots();
     if (currentQSOs.length) updateGlobeArcs();
+    if (heatmapMode) updateHeatmap();
 }
 
 // Projects a globe lat/lng to screen coordinates using the camera matrices.
@@ -2550,6 +2690,7 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
     if (shouldFitBounds) mapEngine.fitBounds();
     if (typeof isResolving !== 'undefined' && isResolving) return;
     if (globeVisible && globeInstance) updateGlobeData();
+    if (heatmapMode) updateHeatmap();
     updateLoadingStatus(false);
 }
 

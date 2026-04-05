@@ -1,5 +1,6 @@
 import 'leaflet.geodesic';
 import 'leaflet.markercluster';
+import './leaflet-heat.js';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
@@ -14,6 +15,11 @@ export class MapEngine {
       maxBounds: [[-85, -Infinity], [85, Infinity]],
       maxBoundsViscosity: 1.0
     }).setView([20, 0], 2);
+
+    // Custom pane below overlayPane (400) so heatmap never blocks marker clicks
+    this.map.createPane('heatPane');
+    this.map.getPane('heatPane').style.zIndex = 350;
+    this.map.getPane('heatPane').style.pointerEvents = 'none';
 
     // Add Dark Matter tiles (sleek tactical look)
     this.tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -39,6 +45,8 @@ export class MapEngine {
     this.standaloneMarkers = L.layerGroup();
     this.pathsVisible = false;
     this.pathHoverEnabled = false;
+    this.heatLayer = null;
+    this.heatVisible = false;
 
     this.clustersEnabled = true;
 
@@ -48,6 +56,7 @@ export class MapEngine {
 
     this.map.on('zoomend', () => {
       if (this.homeMarker) this.updateHomeMarker();
+      if (this._heatPoints) this._rebuildHeat();
     });
   }
 
@@ -134,6 +143,7 @@ export class MapEngine {
         <div class="globe-popup-row"><span>Band</span><span class="globe-popup-val" style="color:${color};font-weight:600;">${band}</span></div>
         <div class="globe-popup-row"><span>Mode</span><span class="globe-popup-val">${mode}</span></div>
         <div class="globe-popup-row"><span>Grid</span><span class="globe-popup-val">${latest.GRIDSQUARE || 'N/A'}</span></div>
+        <div class="globe-popup-row"><span>Signal</span><span class="globe-popup-val">S: ${latest.RST_SENT || '--'} / R: ${latest.RST_RCVD || '--'}</span></div>
         ${lastDate ? `<div class="globe-popup-row"><span>Last QSO</span><span class="globe-popup-val">${lastDate}${lastTime}</span></div>` : ''}
         <div class="globe-popup-row"><span>QSOs</span><span class="globe-popup-val" style="color:${color};font-weight:700;">${historyCount}</span></div>
       </div>
@@ -301,7 +311,7 @@ export class MapEngine {
   createClusterIcon(cluster) {
       const childCount = cluster.getChildCount();
       return L.divIcon({
-          html: `<div style="background: var(--acc-glow); border: 2px solid var(--acc); color: var(--text); border-radius: 50%; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: var(--font-mono); box-shadow: 0 0 10px var(--acc-glow);">
+          html: `<div style="background: var(--acc-glow); border: 2px solid var(--acc); color: #ffffff; border-radius: 50%; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: var(--font-mono); box-shadow: 0 0 10px var(--acc-glow);">
                   ${childCount}
                 </div>`,
           className: 'custom-cluster',
@@ -312,6 +322,41 @@ export class MapEngine {
   /**
    * Auto-fit map to markers
    */
+  setHeatmapData(points) {
+    this._heatPoints = points || [];
+    this._rebuildHeat();
+  }
+
+  _rebuildHeat() {
+    if (this.heatLayer) { this.map.removeLayer(this.heatLayer); this.heatLayer = null; }
+    if (!this._heatPoints || !this._heatPoints.length) { this.heatVisible = false; return; }
+    const zoom = this.map.getZoom();
+
+    // Aggregate at every zoom level — cell size matched to heat radius so blobs from
+    // separate cells can't overlap and accumulate into false hotspots.
+    // Without this, two adjacent strong contacts look much hotter than one identical contact.
+    // No aggregation — _buildHeatPoints already gives exactly one point per visible dot.
+    // Passing all points at every zoom level ensures every individual contact always
+    // has a heat blob, including as clusters break apart when zooming in.
+    const points = this._heatPoints;
+
+    // High max zoomed out = cool/subtle. Low max zoomed in = warm/vivid.
+    const max = Math.max(0.65, 4.5 - zoom * 0.3);
+
+    this.heatLayer = L.heatLayer(points, {
+        radius: 26, blur: 18, maxZoom: 6, max, pane: 'heatPane',
+        gradient: { 0.0: '#00bfff', 0.38: '#00ff88', 0.62: '#ffff00', 0.82: '#ff8800', 1.0: '#ff6000' }
+    });
+    if (this.heatVisible) this.heatLayer.addTo(this.map);
+  }
+
+  setHeatmapVisible(visible) {
+    this.heatVisible = visible;
+    if (!this.heatLayer) return;
+    if (visible) this.heatLayer.addTo(this.map);
+    else this.map.removeLayer(this.heatLayer);
+  }
+
   fitBounds() {
     const layers = this.markers.getLayers();
     if (layers.length > 0 && this.homeLocation) {
