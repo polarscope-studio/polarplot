@@ -1377,6 +1377,7 @@ Website: https://polarplot.net</div>
 
         attachTooltip('pwd-info-icon', 'pwd-tooltip');
         attachTooltip('proxy-info-icon', 'proxy-tooltip');
+        attachTooltip('hm-info-icon', 'hm-tooltip');
       });
     </script>
     <!-- Path Distance Tooltip -->
@@ -1422,13 +1423,9 @@ Website: https://polarplot.net</div>
       .ss-check-row input[type=checkbox] { accent-color:var(--acc);width:14px;height:14px;flex-shrink:0; }
     </style>
     <!-- Signal Heatmap info tooltip -->
-    <div id="hm-tooltip" class="pwd-tooltip" style="display: none;">
-      <div class="pwd-tooltip-header">Signal Heatmap Logic</div>
-      <div class="pwd-tooltip-content">
-        If multiple QSOs are present at the same location, the heat intensity is taken from the **most recent** contact. 
-        <br><br>
-        This reveals current band conditions and prevents density-based bias.
-      </div>
+    <div id="hm-tooltip" style="display:none;position:fixed;width:240px;background:rgba(10,12,22,0.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:12px 14px;font-size:0.72rem;font-weight:400;font-family:'DM Sans',sans-serif;color:rgba(255,255,255,0.6);line-height:1.65;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:99999;pointer-events:none;white-space:normal;text-transform:none;letter-spacing:0;">
+      When multiple QSOs are found per contact, Signal Heatmap will map the most recent QSO.
+      <div style="position:absolute;top:100%;left:20px;border:5px solid transparent;border-top-color:rgba(56,189,248,0.3);"></div>
     </div>
 
     <!-- Main Logic -->
