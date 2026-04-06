@@ -1288,6 +1288,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             isResolving = false; updateLoadingStatus(false);
+            // Update DXCC count after resolve enriches country data
+            document.getElementById('stat-dxcc').textContent = new Set(currentQSOs.map(q => q.COUNTRY || q.DXCC).filter(Boolean)).size;
             // Synchronously wipe all old markers before the async replot so nothing lingers
             mapEngine.clear();
             mapEngine.clearPaths();
@@ -2825,7 +2827,7 @@ function renderTotalPanel(container, isTactical = false) {
                 totalSortCol = col;
                 totalSortDir = (col === 'count' || col === 'lastDate') ? -1 : 1;
             }
-            renderTotalPanel(container);
+            renderTotalPanel(container, isTactical);
         });
     });
 }
