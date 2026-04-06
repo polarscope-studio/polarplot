@@ -329,7 +329,7 @@
       
       /* Tactical Toast / Advisory */
       .tactical-toast {
-        position: fixed; bottom: 28px; left: calc(var(--l-sb) + (100vw - var(--l-sb) - var(--r-sb)) / 2 + 40px); transform: translateX(-50%) translateY(20px);
+        position: fixed; bottom: 28px; left: calc(var(--l-sb) + (100vw - var(--l-sb) - var(--r-sb)) / 2); transform: translateX(-50%) translateY(20px);
         z-index: 100000; padding: 13px 22px;
         background: color-mix(in srgb, var(--surf), transparent 15%);
         backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -1168,6 +1168,28 @@ Website: https://polarplot.net</div>
       </div>
     </div>
 
+    <!-- POTA Contacts Panel (Sidebar-style, used in POTA context) -->
+    <aside id="pota-contacts-panel" class="station-panel stats-modal" style="display:none;">
+      <!-- Tactical Collapse Tab on the LEFT edge -->
+      <button id="pota-sidebar-collapse" class="sidebar-tab side-tab" title="Collapse Panel">›</button>
+      
+      <div class="panel-header" style="padding:10px 15px;">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;">
+          <div class="p-icon" style="font-size:1.2rem;">📡</div>
+          <div style="flex:1;">
+            <h2 style="font-size:1.1rem;margin:0;">All Contacts</h2>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="display:flex;align-items:center;gap:4px;font-size:0.65rem;color:var(--muted);white-space:nowrap;cursor:pointer;">
+              <input type="checkbox" id="pota-sidebar-lines" style="accent-color:var(--acc);width:12px;height:12px;cursor:pointer;">
+              LINES
+            </label>
+            <input type="text" id="pota-sidebar-search" class="field-input" placeholder="🔍 Search..." style="padding:4px 8px;font-size:0.75rem;height:26px;background:rgba(0,0,0,0.2);width:120px;">
+          </div>
+        </div>
+      </div>
+      <div class="panel-content" id="pota-sidebar-content" style="padding:0;"></div>
+    </aside>
 
     <!-- Stats: Total Contacts Panel -->
     <aside id="panel-total" class="station-panel stats-modal">
@@ -1178,16 +1200,12 @@ Website: https://polarplot.net</div>
             <h2>All Contacts</h2>
             <p class="hist-location">Unique callsigns worked</p>
           </div>
-          <div id="pota-search-container" style="display:none;margin-right:15px;width:180px;display:flex;align-items:center;gap:10px;">
-            <label style="display:flex;align-items:center;gap:4px;font-size:0.65rem;color:var(--muted);white-space:nowrap;cursor:pointer;">
-              <input type="checkbox" id="pota-chk-lines" style="accent-color:var(--acc);width:12px;height:12px;cursor:pointer;">
-              LINES
-            </label>
-            <input type="text" id="pota-search" class="field-input" placeholder="🔍 Search..." style="padding:4px 10px;font-size:0.75rem;height:28px;background:rgba(0,0,0,0.2);">
+          <div id="total-search-container" style="display:none;margin-right:15px;width:180px;display:flex;align-items:center;gap:10px;">
+            <input type="text" id="total-search" class="field-input" placeholder="🔍 Search..." style="padding:4px 10px;font-size:0.75rem;height:28px;background:rgba(0,0,0,0.2);">
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button id="pota-collapse-btn" class="sidebar-tab side-tab" title="Collapse Panel">›</button>
+          <button class="close-btn close-stats-btn">×</button>
         </div>
       </div>
       <div class="panel-content" id="panel-total-content" style="padding:0;"></div>
@@ -1415,7 +1433,7 @@ Website: https://polarplot.net</div>
 
     <!-- Main Logic -->
     <!-- POTA Expand Tab -->
-    <button id="pota-expand-tab" class="sidebar-expand-tab" style="left:auto;right:0;border-left:1px solid var(--brd);border-right:none;border-radius:7px 0 0 7px;display:none;z-index:999999;" title="Restore POTA Panel">‹</button>
+    <button id="pota-expand-tab" class="sidebar-tab" style="display:none;" title="Restore POTA Panel">‹</button>
 
     <script src="main.js" type="module"></script>
   </body>

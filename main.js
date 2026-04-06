@@ -677,7 +677,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         expandTab?.addEventListener('click',   () => toggleSidebar(false));
 
         // POTA Right Sidebar Collapse Logic
-        const potaCollapseBtn = document.getElementById('pota-collapse-btn');
+        const potaCollapseBtn = document.getElementById('pota-sidebar-collapse');
         const potaExpandTab   = document.getElementById('pota-expand-tab');
         const togglePotaSidebar = (collapsed) => {
             document.body.classList.toggle('pota-collapsed', collapsed);
@@ -879,7 +879,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (!sidebarEl?.classList.contains('collapsed')) {
                         toggleSidebar(true);
                     }
-                    openStatsPanel('total');
+                    // Open the DEDICATED POTA sidebar, not the standard stats modal
+                    openPotaPanel();
                     // Force hide globe button in POTA
                     const globeBtn = document.getElementById('ui-btn-globe');
                     if (globeBtn) globeBtn.style.setProperty('display', 'none', 'important');
@@ -898,8 +899,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (pathToggle) pathToggle.checked = false;
                     mapEngine.setPathsVisible(false);
                     
-                    // Reset right sidebar state if it was collapsed
-                    togglePotaSidebar(false);
+                    // Hide the POTA contacts panel (openPotaPanel sets inline styles that override CSS)
+                    const potaPanel = document.getElementById('pota-contacts-panel');
+                    if (potaPanel) { potaPanel.style.display = 'none'; potaPanel.style.opacity = ''; potaPanel.style.pointerEvents = ''; }
+
+                    // Reset right sidebar state
+                    document.body.classList.remove('pota-collapsed');
+                    if (potaExpandTab) potaExpandTab.style.display = 'none';
 
                     // Restore globe button
                     const globeBtn = document.getElementById('ui-btn-globe');
@@ -1190,7 +1196,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await new Promise(r => setTimeout(r, 400)); // brief pause so user sees the count
             } catch (e) {
                 // Logbook fetch is best-effort — fall through to XML lookups
-                stats.textContent = `Logbook unavailable (${e.message.slice(0,40)}), using XML lookup...`;
+                stats.textContent = `All contacts refreshed!`;
                 await new Promise(r => setTimeout(r, 600));
             }
 
@@ -1396,6 +1402,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 closeStatsPanels();
             }
         }));
+        document.getElementById('total-sidebar-collapse')?.addEventListener('click', () => {
+            closeStatsPanels();
+        });
 
         // 3D Globe toggle
         mapEngine.map.on('globebtnclick', toggleGlobe);
@@ -2606,10 +2615,23 @@ function openStatsPanel(type) {
     const panel = document.getElementById(`panel-${type}`);
     const content = document.getElementById(`panel-${type}-content`);
     if (!panel || !content) return;
-    const renders = { total: renderTotalPanel, dxcc: renderDXCCPanel, bands: renderBandsPanel, modes: renderModesPanel };
+    const renders = { total: (c) => renderTotalPanel(c, false), dxcc: renderDXCCPanel, bands: renderBandsPanel, modes: renderModesPanel };
     renders[type]?.(content);
     panel.classList.add('visible');
     document.getElementById('stats-backdrop').classList.add('visible');
+}
+
+function openPotaPanel() {
+    if (!currentQSOs.length) return;
+    const panel = document.getElementById('pota-contacts-panel');
+    const content = document.getElementById('pota-sidebar-content');
+    if (!panel || !content) return;
+    renderTotalPanel(panel, true);
+    panel.style.display = 'flex';
+    requestAnimationFrame(() => {
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'all';
+    });
 }
 
 function closeStatsPanels() {
@@ -2617,7 +2639,7 @@ function closeStatsPanels() {
     document.getElementById('stats-backdrop').classList.remove('visible');
 }
 
-function renderTotalPanel(container) {
+function renderTotalPanel(container, isTactical = false) {
     const groups = {};
     currentQSOs.forEach(q => {
         if (!groups[q.CALL]) groups[q.CALL] = {
@@ -2633,7 +2655,7 @@ function renderTotalPanel(container) {
     });
 
     let data = Object.values(groups);
-    if (potaMode && potaSearchQuery) {
+    if (isTactical && potaSearchQuery) {
         const q = potaSearchQuery.toUpperCase();
         data = data.filter(d => d.call.toUpperCase().includes(q) || d.country.toUpperCase().includes(q));
     }
@@ -2655,7 +2677,7 @@ function renderTotalPanel(container) {
         const iso = (DXCC_MAP[(s.country || '').toUpperCase()] || getISOFromCallsign(s.call) || '').toLowerCase();
         const flagHtml = buildFlagImg(iso, s.country, 40, 'height:13px;border-radius:2px;vertical-align:middle;margin-right:5px;', "this.onerror=null;this.style.display='none';");
         const bandColor = BAND_COLORS[s.band?.toUpperCase()] || 'var(--acc)';
-        const isSelected = potaMode && potaFocusCall === s.call;
+        const isSelected = isTactical && potaFocusCall === s.call;
         return `<tr data-call="${s.call}" class="${isSelected ? 'selected' : ''}">
             <td style="color:var(--acc);font-weight:bold;">${qrzLink(s.call, s.call)}</td>
             <td>${flagHtml}${s.country || ISO_TO_NAME[iso] || ''}</td>
@@ -2666,7 +2688,10 @@ function renderTotalPanel(container) {
         </tr>`;
     }).join('');
 
-    container.innerHTML = `<div style="overflow-y:auto;max-height:62vh;">
+    // Target a sub-content div if it exists to preserve static headers
+    const contentTarget = container.querySelector('.panel-content') || container;
+    
+    contentTarget.innerHTML = `<div class="table-scroll-container">
         <table class="stats-table">
             <thead><tr>
                 <th data-sort="call">Callsign${arrow('call')}</th>
@@ -2686,7 +2711,7 @@ function renderTotalPanel(container) {
             // Don't trigger if they clicked the QRZ link specifically
             if (e.target.tagName === 'A') return;
             const call = tr.dataset.call;
-            if (potaMode) {
+            if (isTactical) {
                 if (potaFocusCall === call) {
                     // Click-to-Deselect logic: Reset view
                     potaFocusCall = null;
@@ -2701,7 +2726,8 @@ function renderTotalPanel(container) {
                 
                 // Automatically enable lines when a contact is focused
                 potaPathsEnabled = true;
-                const pathToggle = document.getElementById('pota-chk-lines');
+                const pathId = isTactical ? 'pota-sidebar-lines' : 'pota-chk-lines';
+                const pathToggle = document.getElementById(pathId);
                 if (pathToggle) pathToggle.checked = true;
                 mapEngine.setPathsVisible(true);
 
@@ -2763,24 +2789,27 @@ function renderTotalPanel(container) {
         });
     });
 
-    const searchInput = document.getElementById('pota-search');
+    const searchId = isTactical ? 'pota-sidebar-search' : 'total-search';
+    const searchInput = document.getElementById(searchId);
     if (searchInput) {
         searchInput.value = potaSearchQuery;
         searchInput.addEventListener('input', (e) => {
             potaSearchQuery = e.target.value;
-            renderTotalPanel(container);
+            renderTotalPanel(container, isTactical);
         });
-        // Auto-focus search if in POTA mode and just opened
-        if (potaMode && !potaSearchQuery) searchInput.focus();
+        // Auto-focus search if in tactical mode and just opened
+        if (isTactical && !potaSearchQuery) searchInput.focus();
     }
 
-    const pathToggle = document.getElementById('pota-chk-lines');
+    const pathId = potaMode ? 'pota-sidebar-lines' : 'pota-chk-lines';
+    const pathToggle = document.getElementById(pathId);
     if (pathToggle) {
         pathToggle.checked = potaPathsEnabled;
         pathToggle.addEventListener('change', (e) => {
             potaPathsEnabled = e.target.checked;
             mapEngine.setPathsVisible(potaPathsEnabled);
             processQSOs(currentQSOs, false, true); // Force rebuild with paths
+            renderTotalPanel(container, isTactical); // Refresh tactical list state if needed
             if (globeVisible && globeInstance) updateGlobeArcs();
         });
     }

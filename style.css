@@ -460,7 +460,7 @@ body.globe-active #pota-toggle-row {
   -webkit-backdrop-filter: blur(22px);
   border: 1px solid var(--brd);
   border-radius: 14px;
-  z-index: 4500;
+  z-index: 5500;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-6px) scale(0.97);
@@ -596,25 +596,71 @@ body.pota-active .close-stats-btn { display: block !important; }
 body.pota-active #panel-total.stats-modal .panel-content { max-height: none !important; flex: 1 !important; }
 body.pota-active .stats-table tbody tr.selected { background: var(--acc-glow) !important; border-left: 3px solid var(--acc); }
 body.pota-active .stats-table tbody tr.selected td { color: #fff !important; }
+.table-scroll-container { overflow-y: auto; max-height: 62vh; flex: 1; }
+body.pota-active #pota-contacts-panel .table-scroll-container { max-height: none !important; height: 100% !important; }
+
 body.pota-active .stats-table tbody tr { cursor: pointer; }
+body.pota-active #pota-contacts-panel .stats-table thead th:last-child,
+body.pota-active #pota-contacts-panel .stats-table tbody td:last-child { padding-right: 0; text-align: center; }
 
 
-#pota-collapse-btn.sidebar-tab {
-  position: absolute; top: 120px; left: -18px; 
-  width: 18px; height: 52px; border-radius: 7px 0 0 7px;
-  background: var(--surf); border: 1px solid var(--brd); border-left: 1px solid var(--brd);
-  color: var(--muted); font-size: 1rem; line-height: 1;
+#pota-sidebar-collapse.sidebar-tab,
+#pota-expand-tab.sidebar-tab {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 56px; border-radius: 8px 0 0 8px;
+  background: rgba(20,20,20,0.9); border: 1px solid rgba(255,255,255,0.1); border-right: none;
+  color: var(--acc); font-size: 1.2rem; font-weight: bold;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  z-index: 200; transition: color 0.2s, border-color 0.2s;
-  box-shadow: -4px 0 10px rgba(0,0,0,0.3);
+  z-index: 1000000; transition: color 0.2s, border-color 0.2s, background 0.2s;
+  box-shadow: -4px 0 15px rgba(0,0,0,0.4);
 }
-#pota-collapse-btn.sidebar-tab:hover { color: var(--acc); border-color: var(--acc); }
+#pota-sidebar-collapse.sidebar-tab { left: -24px; }
+#pota-expand-tab.sidebar-tab { right: 0; }
 
-/* Ensure the total panel is positioned correctly for the tab */
-body.pota-active #panel-total {
-  right: 1.5rem; top: 1.5rem; bottom: 1.5rem; height: auto; transform: none; left: auto;
+#pota-sidebar-collapse.sidebar-tab:hover,
+#pota-expand-tab.sidebar-tab:hover { color: #fff; background: var(--acc); border-color: var(--acc); }
+
+/* Ensure the tactical panels are positioned correctly for the tab */
+body.pota-active #pota-contacts-panel {
+  display: flex; flex-direction: column;
+  position: fixed; width: 450px; left: auto;
+  right: 1.5rem; top: 1.5rem; bottom: 1.5rem; transform: none;
+  height: calc(100vh - 3rem);
+  max-height: none !important;
+  opacity: 1; pointer-events: all;
+  transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+  z-index: 5000;
+  /* overflow: hidden was removed here to prevent clipping the side tab */
+}
+body.pota-active.pota-collapsed #pota-contacts-panel {
+  right: -560px;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Ensure the internal list fills the space and clips correctly */
+body.pota-active #pota-contacts-panel .panel-content {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  min-height: 0;
+}
+body.pota-active #pota-contacts-panel .table-scroll-container {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  max-height: none !important;
+  min-height: 0;
+  border-radius: 0 0 16px 16px;
+}
+
+/* Move map controls left when POTA sidebar is open */
+.map-ctrl-group.top-right,
+.map-ctrl-group.bottom-right {
   transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
-body.pota-active.pota-collapsed #panel-total {
-  right: -560px;
+body.pota-active:not(.pota-collapsed) .map-ctrl-group.top-right,
+body.pota-active:not(.pota-collapsed) .map-ctrl-group.bottom-right {
+  right: 480px;
 }
