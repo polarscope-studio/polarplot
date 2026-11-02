@@ -22,6 +22,25 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400',
 };
 
+async function handleLotw(request, allowedOrigin) {
+  const headers = { 'Access-Control-Allow-Origin': allowedOrigin, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' };
+  let body;
+  try { body = await request.json(); } catch { return new Response('Invalid request', { status: 400, headers }); }
+  const { login, password, since } = body || {};
+  if (typeof login !== 'string' || typeof password !== 'string' || !login || !password || login.length > 64 || password.length > 128) {
+    return new Response('Missing LoTW username or password', { status: 400, headers });
+  }
+  const params = new URLSearchParams({
+    login, password,
+    qso_query: '1', qso_qsl: 'yes', qso_qsldetail: 'yes', qso_mydetail: 'yes',
+    qso_qslsince: /^\d{4}-\d{2}-\d{2}$/.test(since || '') ? since : '1900-01-01',
+  });
+  const upstream = await fetch(`https://lotw.arrl.org/lotwuser/lotwreport.adi?${params}`, {
+    headers: { 'User-Agent': 'Polarplot/1.9' },
+  });
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const origin = request.headers.get('Origin') || '';
@@ -36,6 +55,13 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    // LoTW confirmation report. Credentials arrive in the POST body (never in a browser URL)
+    // and are only forwarded to ARRL over HTTPS — nothing is logged or stored here.
+    if (url.pathname === '/lotw' && request.method === 'POST') {
+      return handleLotw(request, allowedOrigin);
+    }
+
     // Target URL is everything after the worker path, e.g. /https://xmldata.qrz.com/...
     const targetUrl = url.pathname.slice(1) + url.search;
 

@@ -1,4 +1,5 @@
 import 'leaflet.geodesic';
+import { tileUrl, tileAttribution } from './map-tiles.js';
 import 'leaflet.markercluster';
 import './leaflet-heat.js';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
@@ -16,14 +17,12 @@ export class MapEngine {
       maxBoundsViscosity: 1.0
     }).setView([20, 0], 2);
 
+    // Small credit line, required by the CARTO / OpenStreetMap / Esri tile terms
+    L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(this.map);
+
     // Initialize Tiles
-    this.tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      updateWhenIdle: false,
-      updateWhenZooming: true,
-      keepBuffer: 6,
-      noWrap: false
-    }).addTo(this.map);
+    this.tileLayer = null;
+    this.setTileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
 
     // Initialize Cluster Group
     this.markers = L.markerClusterGroup({
@@ -44,10 +43,22 @@ export class MapEngine {
     this.heatVisible = false;
 
     this.clustersEnabled = true;
+    this.markersVisible = true;
 
     // Add Zoom Control at bottom right
     this.homeLocation = null;
     this.homeMarker = null;
+
+    // Near the poles the map can't pan any further north (maxBounds), so a popup above a
+    // high-latitude dot gets cut off. When there's no room above, open it below the dot.
+    this.map.on('popupopen', (e) => this._placePopup(e.popup));
+    this.map.on('popupclose', (e) => {
+      const el = e.popup.getElement();
+      if (el?.classList.contains('popup-below')) {
+        el.classList.remove('popup-below');
+        e.popup.options.offset = e.popup._defaultOffset;
+      }
+    });
 
     this.map.on('zoomend', () => {
       if (this.homeMarker) this.updateHomeMarker();
@@ -55,9 +66,24 @@ export class MapEngine {
     });
   }
 
+  _placePopup(popup) {
+    const el = popup.getElement();
+    if (!el || el.classList.contains('popup-below')) return;
+    const mapTop = this.map.getContainer().getBoundingClientRect().top;
+    if (el.getBoundingClientRect().top >= mapTop + 8) return;
+    // Leaflet anchors a popup's bottom edge to the point; push it down by its own height
+    // plus room for the dot and the (flipped) tip
+    popup._defaultOffset = popup.options.offset;
+    popup.options.offset = L.point(0, el.offsetHeight + 49);
+    el.classList.add('popup-below');
+    popup.update();
+  }
+
   setTileLayer(url, options = {}) {
     if (this.tileLayer) this.map.removeLayer(this.tileLayer);
-    this.tileLayer = L.tileLayer(url, {
+    this.tileBaseUrl = url; // un-keyed URL, so other maps can reuse the same style
+    this.tileLayer = L.tileLayer(tileUrl(url), {
+      attribution: tileAttribution(url),
       maxZoom: 19,
       updateWhenIdle: false,
       updateWhenZooming: true,
@@ -276,13 +302,27 @@ export class MapEngine {
    */
   setClustersEnabled(enabled) {
       this.clustersEnabled = enabled;
-      
+      if (!this.markersVisible) return;
+
       if (enabled) {
           if (this.map.hasLayer(this.standaloneMarkers)) this.map.removeLayer(this.standaloneMarkers);
           if (!this.map.hasLayer(this.markers)) this.map.addLayer(this.markers);
       } else {
           if (this.map.hasLayer(this.markers)) this.map.removeLayer(this.markers);
           if (!this.map.hasLayer(this.standaloneMarkers)) this.map.addLayer(this.standaloneMarkers);
+      }
+  }
+
+  /**
+   * Show / hide all QSO dots (clustered or standalone)
+   */
+  setMarkersVisible(visible) {
+      this.markersVisible = visible;
+      if (visible) {
+          this.setClustersEnabled(this.clustersEnabled);
+      } else {
+          if (this.map.hasLayer(this.markers)) this.map.removeLayer(this.markers);
+          if (this.map.hasLayer(this.standaloneMarkers)) this.map.removeLayer(this.standaloneMarkers);
       }
   }
 
@@ -361,6 +401,150 @@ export class MapEngine {
     if (!this.paths) return;
     if (visible) this.paths.addTo(this.map);
     else this.map.removeLayer(this.paths);
+  }
+
+  /**
+   * Maidenhead grid square overlay (Wavelog-style worked / confirmed map).
+   * cells: [{ grid: 'IO91', confirmed: bool, qsos: n, calls: [...] }]
+   * Drawn in its own pane beneath the contact dots so markers stay clickable.
+   */
+  setGridSquares(cells, onClick = null) {
+    if (!this.map.getPane('gridPane')) {
+      const pane = this.map.createPane('gridPane');
+      pane.style.zIndex = 350;
+      pane.style.pointerEvents = 'none';
+      this._gridRenderer = L.canvas({ pane: 'gridPane', padding: 0.5 });
+    }
+    if (this.gridLayer) { this.map.removeLayer(this.gridLayer); this.gridLayer = null; }
+    this._gridCells = new Map((cells || []).map(c => [c.grid, c]));
+    this._gridOnClick = onClick;
+    this._bindGridEvents();
+    if (!cells || !cells.length) { this._setGridHover(null); return; }
+
+    this.gridLayer = L.layerGroup();
+    cells.forEach(c => {
+      const lon = (c.grid.charCodeAt(0) - 65) * 20 - 180 + parseInt(c.grid[2]) * 2;
+      const lat = (c.grid.charCodeAt(1) - 65) * 10 - 90 + parseInt(c.grid[3]);
+      const color = c.confirmed ? '#22c55e' : '#f59e0b';
+      L.rectangle([[lat, lon], [lat + 1, lon + 2]], {
+        renderer: this._gridRenderer, pane: 'gridPane', interactive: false,
+        color, weight: 1, opacity: 0.7, fillColor: color, fillOpacity: 0.28
+      }).addTo(this.gridLayer);
+    });
+    this.gridLayer.addTo(this.map);
+  }
+
+  // The overlayPane canvas (paths / heatmap) sits above gridPane and swallows pointer
+  // events, so hit-testing is done from map-level events instead. Leaflet only fires
+  // these when no marker or path consumed the event, so dots and paths still win.
+  _bindGridEvents() {
+    if (this._gridEventsBound) return;
+    this._gridEventsBound = true;
+    const gridAt = (latlng) => {
+      const lon = ((latlng.lng + 180) % 360 + 360) % 360;
+      const lat = latlng.lat + 90;
+      if (lat < 0 || lat >= 180) return null;
+      const name = String.fromCharCode(65 + Math.floor(lon / 20), 65 + Math.floor(lat / 10))
+        + Math.floor((lon % 20) / 2) + Math.floor(lat % 10);
+      return this._gridCells?.get(name) || null;
+    };
+    this.map.on('click', e => {
+      const cell = gridAt(e.latlng);
+      if (cell && this._gridOnClick) this._gridOnClick(cell.grid);
+    });
+    this.map.on('mousemove', e => this._setGridHover(gridAt(e.latlng)));
+    this.map.on('mouseout', () => this._setGridHover(null));
+  }
+
+  _setGridHover(cell) {
+    this.map.getContainer().style.cursor = cell ? 'pointer' : '';
+  }
+
+  /**
+   * Maidenhead lines + labels for every field/square, worked or not.
+   * Canvas tiles so the whole world can be labelled cheaply:
+   *   zoom <= 3 → fields (IO) · zoom 4 → square lines, field labels · zoom >= 5 → square labels (IO91)
+   */
+  setGridLabelsVisible(visible) {
+    if (!visible) {
+      if (this.gridLabels) { this.map.removeLayer(this.gridLabels); this.gridLabels = null; }
+      return;
+    }
+    if (this.gridLabels) return;
+    if (!this.map.getPane('gridLabelPane')) {
+      const pane = this.map.createPane('gridLabelPane');
+      pane.style.zIndex = 360;
+      pane.style.pointerEvents = 'none';
+    }
+    const A = 65;
+    const fieldName = (lat, lon) => String.fromCharCode(A + Math.floor((lon + 180) / 20), A + Math.floor((lat + 90) / 10));
+    const squareName = (lat, lon) => fieldName(lat, lon) + Math.floor(((lon + 180) % 20) / 2) + Math.floor((lat + 90) % 10);
+
+    const GridLabels = L.GridLayer.extend({
+      createTile(coords) {
+        const size = this.getTileSize();
+        const dpr = window.devicePixelRatio || 1;
+        const tile = document.createElement('canvas');
+        tile.width = size.x * dpr; tile.height = size.y * dpr;
+        tile.style.width = size.x + 'px'; tile.style.height = size.y + 'px';
+        const ctx = tile.getContext('2d');
+        ctx.scale(dpr, dpr);
+
+        const z = coords.z, map = this._map;
+        const nw = coords.scaleBy(size);
+        const px = (lat, lon) => map.project([lat, lon], z).subtract(nw);
+        const tl = map.unproject(nw, z), br = map.unproject(nw.add(size), z);
+        const squares = z >= 4;
+        const lonStep = squares ? 2 : 20, latStep = squares ? 1 : 10;
+        const clampLat = v => Math.max(-85, Math.min(85, v));
+
+        // Iterate one cell beyond the tile so labels straddling a tile edge are drawn on both sides
+        const lonStart = Math.floor((tl.lng + 180) / lonStep) * lonStep - 180 - lonStep;
+        const latStart = Math.floor((br.lat + 90) / latStep) * latStep - 90 - latStep;
+        const lonEnd = br.lng + lonStep, latEnd = tl.lat + latStep;
+
+        // Lines
+        for (let lon = lonStart; lon <= lonEnd; lon += lonStep) {
+          const isField = (lon + 180) % 20 === 0;
+          const x = Math.round(px(0, lon).x) + 0.5;
+          ctx.strokeStyle = isField ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.22)';
+          ctx.lineWidth = isField && squares ? 1.5 : 1;
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, size.y); ctx.stroke();
+        }
+        for (let lat = latStart; lat <= latEnd; lat += latStep) {
+          if (lat < -85 || lat > 85) continue;
+          const isField = (lat + 90) % 10 === 0;
+          const y = Math.round(px(lat, 0).y) + 0.5;
+          ctx.strokeStyle = isField ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.22)';
+          ctx.lineWidth = isField && squares ? 1.5 : 1;
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size.x, y); ctx.stroke();
+        }
+
+        // Labels
+        const squareLabels = z >= 5;
+        const lblLon = squareLabels ? 2 : 20, lblLat = squareLabels ? 1 : 10;
+        const lLonStart = Math.floor((tl.lng + 180) / lblLon) * lblLon - 180 - lblLon;
+        const lLatStart = Math.floor((br.lat + 90) / lblLat) * lblLat - 90 - lblLat;
+        ctx.font = `700 ${squareLabels ? (z >= 7 ? 13 : 11) : 13}px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round'; ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillStyle = 'rgba(226,232,240,0.85)';
+        for (let lon = lLonStart; lon <= br.lng + lblLon; lon += lblLon) {
+          if (lon < -180 || lon >= 180) continue;
+          for (let lat = lLatStart; lat <= tl.lat + lblLat; lat += lblLat) {
+            if (lat < -90 || lat >= 90) continue;
+            const cLat = clampLat(lat + lblLat / 2);
+            const p = px(cLat, lon + lblLon / 2);
+            const txt = squareLabels ? squareName(lat, lon) : fieldName(lat, lon);
+            ctx.strokeText(txt, p.x, p.y);
+            ctx.fillText(txt, p.x, p.y);
+          }
+        }
+        return tile;
+      }
+    });
+    this.gridLabels = new GridLabels({ pane: 'gridLabelPane', updateWhenZooming: false, keepBuffer: 2 }).addTo(this.map);
   }
 
   invalidateSize() {
