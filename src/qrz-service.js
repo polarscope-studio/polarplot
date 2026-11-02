@@ -62,6 +62,11 @@ export class QRZService {
         name: callData.querySelector('name')?.textContent,
         dxcc: callData.querySelector('dxcc')?.textContent,
         country: callData.querySelector('country')?.textContent,
+        state: callData.querySelector('state')?.textContent,
+        county: callData.querySelector('county')?.textContent,
+        cqzone: callData.querySelector('cqzone')?.textContent,
+        ituzone: callData.querySelector('ituzone')?.textContent,
+        iota: callData.querySelector('iota')?.textContent,
       };
     } catch (e) {
       console.error('QRZ Lookup Failed:', e);
@@ -168,7 +173,11 @@ export class QRZService {
           lon: String(lon),
           grid: qso.GRIDSQUARE || existing?.grid || null,
           country: qso.COUNTRY || qso.DXCC_COUNTRY || existing?.country || null,
-          dxcc: qso.DXCC || existing?.dxcc || null
+          dxcc: qso.DXCC || existing?.dxcc || null,
+          state: qso.STATE || existing?.state || null,
+          county: qso.CNTY || existing?.county || null,
+          cqzone: qso.CQZ || existing?.cqzone || null,
+          ituzone: qso.ITUZ || existing?.ituzone || null
         });
       }
     }

@@ -1,12 +1,20 @@
 import './style.css';
 import { MapEngine } from './src/map-engine.js';
 import { QRZService } from './src/qrz-service.js';
+import { openStatsDashboard } from './src/stats-dashboard.js';
+import { enrichQSOs, getGeoData, getCountries, getDxccEntities } from './src/log-enricher.js';
+import * as sessions from './src/session-store.js';
+import { repairCoordinates } from './src/maidenhead.js';
+import { tileUrl } from './src/map-tiles.js';
+import { fetchPotaProfile, applyPotaHunterQsos, applyPotaLog, fetchParkInfo } from './src/pota-service.js';
+import { fetchLotwReport, parseAdif, applyLotwConfirmations } from './src/lotw-service.js';
 
 let mapEngine;
 let worker;
 let currentQSOs = [];
 let searchQuery = '';
 let selectedDXCC = '';
+let selectedStation = ''; // '' = all; otherwise STATION_CALLSIGN (merged multi-callsign logs)
 let dateFrom = '';
 let dateTo = '';
 
@@ -20,6 +28,7 @@ function dateMatchesRange(qsoDate) {
     return true;
 }
 let heatmapMode = null; // null=off, 'rcvd'=RST_RCVD, 'sent'=RST_SENT
+let gridMode = null;    // null=off, 'all' | 'conf' | 'unconf'
 let potaMode = false;
 let potaFocusCall = null;
 let potaSearchQuery = '';
@@ -69,6 +78,18 @@ const FLAG_OVERRIDES = {
 
 function qrzLink(call, innerHtml, extraStyle = '') {
     return `<a href="https://www.qrz.com/db/${encodeURIComponent(call)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;${extraStyle}">${innerHtml}</a>`;
+}
+
+const _MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const fmtQsoDate = d => d?.length === 8 ? `${d.slice(6, 8)}-${_MONTHS[parseInt(d.slice(4, 6)) - 1] || '??'}-${d.slice(0, 4)}` : (d || '--');
+const fmtQsoTime = t => t?.length >= 4 ? `${t.slice(0, 2)}:${t.slice(2, 4)}` : '';
+const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// LoTW / paper QSL / eQSL / QRZ confirmation badges; lit green when received
+function qslBadges(q) {
+    const badge = (label, on, date) => `<span title="${label} ${on ? 'received' + (date ? ' ' + fmtQsoDate(date) : '') : 'not received'}" style="display:inline-block;padding:1px 5px;margin:1px 2px 1px 0;border-radius:3px;font-size:0.55rem;font-weight:700;letter-spacing:0.04em;border:1px solid ${on ? '#22c55e' : 'var(--brd)'};color:${on ? '#22c55e' : 'var(--muted)'};background:${on ? 'rgba(34,197,94,0.12)' : 'transparent'};opacity:${on ? 1 : 0.5};">${label}</span>`;
+    return badge('LOTW', q.LOTW_QSL_RCVD === 'Y', q.LOTW_QSLRDATE) + badge('QSL', q.QSL_RCVD === 'Y', q.QSLRDATE)
+        + badge('EQSL', q.EQSL_QSL_RCVD === 'Y', q.EQSL_QSLRDATE) + badge('QRZ', q.APP_QRZLOG_STATUS === 'C', q.APP_QRZLOG_QSLDATE);
 }
 
 function buildFlagImg(iso, name, cdnWidth, style, onFail) {
@@ -574,6 +595,29 @@ const BAND_COLORS = {
 const savedBands = localStorage.getItem('polarlog_active_bands');
 const activeBands = savedBands ? new Set(JSON.parse(savedBands)) : new Set(Object.keys(BAND_COLORS));
 
+// Mode filter. Stores the modes switched OFF, so a mode seen for the first time is shown by default.
+let hiddenModes;
+try { hiddenModes = new Set(JSON.parse(localStorage.getItem('polarlog_hidden_modes') || '[]')); } catch { hiddenModes = new Set(); }
+// FT4, JS8 etc. are logged as MODE=MFSK + SUBMODE. USB/LSB are sideband choices of SSB
+// (some loggers, incl. QRZ, write them as the MODE itself), so they share one SSB chip.
+const modeOf = q => {
+    const mode = (q.MODE || 'UNKNOWN').toUpperCase();
+    if (mode === 'MFSK' && q.SUBMODE) return q.SUBMODE.toUpperCase();
+    return mode === 'USB' || mode === 'LSB' ? 'SSB' : mode;
+};
+const modeShown = q => !hiddenModes.has(modeOf(q));
+
+// "Show my activation QSOs" filter, set from the POTA Activator award page.
+// null = off · '' = QSOs from any of my activations · 'GB-0577' = that park only
+let activationFilter = null;
+const myParks = q => String(q.MY_POTA_REF || (String(q.MY_SIG || '').toUpperCase() === 'POTA' ? q.MY_SIG_INFO : '') || '')
+    .split(',').map(s => s.split('@')[0].trim().toUpperCase()).filter(Boolean);
+const activationShown = q => {
+    if (activationFilter === null) return true;
+    const parks = myParks(q);
+    return activationFilter === '' ? parks.length > 0 : parks.includes(activationFilter);
+};
+
 const OVERLAY_PRESETS = [
     { id: 'dark',      name: 'Dark Matter',  view: '2d', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',            preview: 'https://a.basemaps.cartocdn.com/dark_all/3/4/3.png' },
     { id: 'light',     name: 'Arctic White', view: '2d', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',           preview: 'https://a.basemaps.cartocdn.com/light_all/3/4/3.png' },
@@ -808,9 +852,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     stageIdx++;
                 });
             } else if (action === 'parseResult') {
-                currentQSOs = data;
+                const merged = dedupeQSOs(data);
+                const fixedCoords = repairCoordinates(merged);
+                currentQSOs = merged;
                 clearInterval(textRotation);
-                finalizeParsedData(data);
+                finalizeParsedData(merged);
+                runSmartReader(true);
+                saveImportedSession(merged);
+                if (fixedCoords) showTacticalToast(`Placed ${fixedCoords} contacts by their grid square — their logged coordinates pointed somewhere else`, 6000);
+                if (_pendingFileCount > 1) {
+                    const dupes = data.length - merged.length;
+                    showTacticalToast(`Merged ${_pendingFileCount} logs · ${merged.length} QSOs${dupes ? ` (${dupes} duplicates removed)` : ''}`, 5000);
+                }
             }
         };
 
@@ -986,6 +1039,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        document.getElementById('chk-dots')?.addEventListener('change', (e) => {
+            mapEngine.setMarkersVisible(e.target.checked);
+            if (globeVisible && globeInstance) {
+                globeInstance.resumeAnimation();
+                updateGlobeDots();
+            }
+        });
+
         if (chkClusters) {
             chkClusters.checked = false;
             mapEngine.setClustersEnabled(false);
@@ -1031,6 +1092,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             hmBtnSent.onclick = () => toggleHm('sent');
         }
 
+        // Grid Squares toggle (worked / confirmed Maidenhead squares)
+        const chkGrids    = document.getElementById('chk-grids');
+        const gridOptions = document.getElementById('grid-options');
+        const gridBtns = { all: 'grid-mode-all', conf: 'grid-mode-conf', unconf: 'grid-mode-unconf' };
+        const activeGridBtn = () => Object.keys(gridBtns).find(k => document.getElementById(gridBtns[k])?.classList.contains('active')) || 'all';
+        chkGrids?.addEventListener('change', (e) => {
+            gridMode = e.target.checked ? activeGridBtn() : null;
+            if (gridOptions) gridOptions.style.display = e.target.checked ? 'flex' : 'none';
+            updateGridSquares();
+        });
+        Object.entries(gridBtns).forEach(([mode, id]) => {
+            document.getElementById(id)?.addEventListener('click', () => {
+                Object.values(gridBtns).forEach(b => document.getElementById(b)?.classList.toggle('active', b === id));
+                gridMode = mode;
+                updateGridSquares();
+            });
+        });
+
+        document.getElementById('close-grid-panel')?.addEventListener('click', () =>
+            document.getElementById('grid-panel')?.classList.remove('visible'));
+
+        // Clicking anywhere outside the QSO-history or grid window (or pressing Esc) closes it.
+        // Runs on pointerdown, before the click that might open another window, so
+        // "Show All QSOs" on a different station still swaps straight to that station.
+        const dismissable = ['history-panel', 'grid-panel'];
+        document.addEventListener('pointerdown', e => {
+            dismissable.forEach(id => {
+                const el = document.getElementById(id);
+                if (el?.classList.contains('visible') && !el.contains(e.target)) el.classList.remove('visible');
+            });
+        }, true);
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Escape') return;
+            dismissable.forEach(id => document.getElementById(id)?.classList.remove('visible'));
+        });
+
         // Block Visual Options interactions when no log is loaded
         document.getElementById('visual-options-section')?.addEventListener('click', (e) => {
             if (currentQSOs.length) return;
@@ -1043,8 +1140,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             const band = chip.dataset.band;
             if (activeBands.has(band)) chip.classList.add('active');
             else chip.classList.remove('active');
-            chip.addEventListener('click', () => {
-                if (activeBands.has(band)) {
+            chip.title = 'Click to toggle · Ctrl+click to show only this band (again to show all)';
+            chip.addEventListener('click', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    // Solo this band; Ctrl+clicking the band that's already soloed restores all
+                    const soloed = activeBands.size === 1 && activeBands.has(band);
+                    activeBands.clear();
+                    document.querySelectorAll('#band-filter .band-chip').forEach(c => {
+                        const on = soloed || c === chip;
+                        if (on) activeBands.add(c.dataset.band);
+                        c.classList.toggle('active', on);
+                    });
+                } else if (activeBands.has(band)) {
                     activeBands.delete(band);
                     chip.classList.remove('active');
                 } else {
@@ -1187,6 +1294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (entry.grid)    qso.GRIDSQUARE = entry.grid;
                     if (entry.country) qso.COUNTRY    = entry.country;
                     if (entry.dxcc)    qso.DXCC       = entry.dxcc;
+                    applyQrzExtras(qso, entry);
                     logbookMatched++;
                 }
                 stats.textContent = `QRZ Logbook: ${logbookMatched} matched from ${logbookMap.size} entries`;
@@ -1252,6 +1360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     if (data.grid)    qso.GRIDSQUARE = data.grid;
                                     if (data.dxcc)    qso.DXCC       = data.dxcc;
                                     if (data.country) qso.COUNTRY    = data.country;
+                                    applyQrzExtras(qso, data);
                                 }
                                 resolvedCount += callMap.get(call).length;
                             }
@@ -1288,6 +1397,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             isResolving = false; updateLoadingStatus(false);
+            repairCoordinates(currentQSOs);
+            scheduleSessionSave();
             // Update DXCC count after resolve enriches country data
             document.getElementById('stat-dxcc').textContent = new Set(currentQSOs.map(q => q.COUNTRY || q.DXCC).filter(Boolean)).size;
             // Synchronously wipe all old markers before the async replot so nothing lingers
@@ -1331,7 +1442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) continue;
                 const existing = refMap.get(qso.CALL);
                 if (!existing || (!existing.grid && qso.GRIDSQUARE))
-                    refMap.set(qso.CALL, { lat: String(lat), lon: String(lon), grid: qso.GRIDSQUARE||null, country: qso.COUNTRY||qso.DXCC_COUNTRY||null, dxcc: qso.DXCC||null });
+                    refMap.set(qso.CALL, { lat: String(lat), lon: String(lon), grid: qso.GRIDSQUARE||null, country: qso.COUNTRY||qso.DXCC_COUNTRY||null, dxcc: qso.DXCC||null, state: qso.STATE||null, county: qso.CNTY||null, cqzone: qso.CQZ||null, ituzone: qso.ITUZ||null });
             }
             if (!refMap.size) { qrzAdifStatus.style.display='block'; qrzAdifStatus.style.color='var(--muted)'; qrzAdifStatus.textContent='No mappable contacts found in file.'; return; }
             let matched = 0;
@@ -1342,6 +1453,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (entry.grid)    qso.GRIDSQUARE = entry.grid;
                 if (entry.country) qso.COUNTRY    = entry.country;
                 if (entry.dxcc)    qso.DXCC       = entry.dxcc;
+                applyQrzExtras(qso, entry);
                 matched++;
             }
             qrzAdifStatus.style.display = 'block';
@@ -1349,7 +1461,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             qrzAdifStatus.textContent = matched > 0
                 ? `✓ ${matched} contacts enriched from ${refMap.size} logbook entries`
                 : 'No callsign matches found between logs.';
-            if (matched > 0) { processQSOs(currentQSOs, false, true); if (globeVisible && globeInstance) updateGlobeData(); }
+            if (matched > 0) { repairCoordinates(currentQSOs); processQSOs(currentQSOs, false, true); if (globeVisible && globeInstance) updateGlobeData(); scheduleSessionSave(); }
         };
 
         if (qrzAdifDropzone) {
@@ -1370,15 +1482,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
-        mapEngine.map.on('popupopen', (e) => {
-            const btn = e.popup._container.querySelector('.btn-show-history');
-            if (btn) btn.onclick = () => {
-                const data = e.popup._source?.options?.stationData || e.popup._stationData;
-                if (data) showHistoryPanel(data);
-            };
+        // "Show All QSOs" in any map popup. Delegated, because wiring each popup on
+        // 'popupopen' missed re-opened popups and left the button dead.
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.leaflet-popup .btn-show-history')) return;
+            const popup = mapEngine.map._popup;
+            const data = popup?._source?.options?.stationData || popup?._stationData;
+            if (data) showHistoryPanel(data);
         });
 
         document.getElementById('search-call')?.addEventListener('input', (e) => { searchQuery = e.target.value.toUpperCase(); processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
+        document.getElementById('filter-station')?.addEventListener('change', (e) => { selectedStation = e.target.value; processQSOs(currentQSOs, false, true); if (globeVisible && globeInstance) updateGlobeData(); });
         document.getElementById('filter-dxcc')?.addEventListener('change', (e) => { selectedDXCC = e.target.value; processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); });
         const applyDateFilter = () => { processQSOs(currentQSOs, false); if (globeVisible && globeInstance) updateGlobeData(); };
         document.getElementById('date-from')?.addEventListener('change', (e) => { dateFrom = e.target.value; applyDateFilter(); });
@@ -1397,6 +1511,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById(`card-${type}`)?.addEventListener('click', () => openStatsPanel(type));
         });
         document.getElementById('stats-backdrop')?.addEventListener('click', closeStatsPanels);
+        document.getElementById('open-stats-dashboard')?.addEventListener('click', openFullStats);
         document.querySelectorAll('.close-stats-btn').forEach(btn => btn.addEventListener('click', () => {
             if (potaMode) {
                 togglePotaSidebar(true); // Just collapse in POTA mode
@@ -1455,7 +1570,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 card.dataset.overlayId = preset.id;
                 card.innerHTML = `
                     <div class="overlay-preview">
-                        <img src="${preset.preview}" alt="${preset.name}" loading="lazy">
+                        <img src="${tileUrl(preset.preview)}" alt="${preset.name}" loading="lazy">
                     </div>
                     <span class="overlay-label">${preset.name}</span>`;
                     
@@ -1508,17 +1623,259 @@ document.addEventListener('DOMContentLoaded', async () => {
             unitMiBtn.onclick = () => updateUnitUI('mi');
             updateUnitUI(currentUnits);
         }
+        initLotwControls();
+        renderSavedLogs();
+        restoreLastSession();
         updateLoadingStatus(false);
     } catch (e) { console.error('INIT FAILURE:', e); }
 });
 
+// ─── Saved sessions (browser storage) ────────────────────────────────────────
+
+let currentSessionId = null;
+let currentSessionMeta = {};
+let _sessionSaveTimer = null;
+
+async function saveImportedSession(qsos) {
+    if (!sessions.isAvailable()) return;
+    const name = _pendingFileNames.length > 1 ? _pendingFileNames.join(' + ') : (_pendingFileNames[0] || 'Imported log');
+    try {
+        // Re-importing a file with the same name replaces that saved log instead of duplicating it.
+        // LoTW sync starts over, since the new file may contain QSOs the last sync never saw.
+        const existing = (await sessions.listSessions()).find(x => x.name === name);
+        const rec = await sessions.saveSession({ id: existing?.id, name, qsos, meta: { lotwSyncedAt: null } });
+        currentSessionId = rec.id;
+        currentSessionMeta = rec.meta;
+        renderSavedLogs();
+        updateLotwStatus();
+    } catch (e) { console.warn('Could not save log to this browser:', e); }
+}
+
+// Debounced: many updates (QRZ resolve, LoTW sync) arrive in bursts
+function scheduleSessionSave() {
+    if (!currentSessionId || !sessions.isAvailable()) return;
+    clearTimeout(_sessionSaveTimer);
+    _sessionSaveTimer = setTimeout(async () => {
+        try {
+            const rec = await sessions.saveSession({ id: currentSessionId, qsos: currentQSOs, meta: currentSessionMeta });
+            currentSessionMeta = rec.meta;
+            renderSavedLogs();
+        } catch (e) { console.warn('Could not update saved log:', e); }
+    }, 1200);
+}
+
+async function openSavedSession(id) {
+    const rec = await sessions.loadSession(id);
+    if (!rec) return false;
+    currentSessionId = rec.id;
+    currentSessionMeta = rec.meta || {};
+    sessions.setLastSessionId(rec.id);
+    currentQSOs = rec.qsos;
+    if (repairCoordinates(currentQSOs)) scheduleSessionSave();
+    finalizeParsedData(currentQSOs);
+    runSmartReader(false);
+    renderSavedLogs();
+    updateLotwStatus();
+    return true;
+}
+
+async function restoreLastSession() {
+    const id = sessions.isAvailable() && sessions.getLastSessionId();
+    if (!id) return;
+    try {
+        if (await openSavedSession(id)) showTacticalToast(`Restored “${(await sessions.loadSession(id))?.name}” from your last visit`, 4000);
+    } catch (e) { console.warn('Could not restore last log:', e); }
+}
+
+async function renderSavedLogs() {
+    const box = document.getElementById('saved-logs');
+    if (!box || !sessions.isAvailable()) return;
+    let list = [];
+    try { list = await sessions.listSessions(); } catch { /* storage blocked */ }
+    box.style.display = list.length ? '' : 'none';
+    const fmt = t => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    box.innerHTML = `<div class="saved-logs-head">Saved on this device</div>` + list.map(x => `
+        <div class="saved-log ${x.id === currentSessionId ? 'active' : ''}" data-id="${x.id}">
+            <button class="saved-log-open" data-act="open" title="Open this log">
+                <span class="saved-log-name">${esc(x.name)}</span>
+                <span class="saved-log-meta">${x.count.toLocaleString()} QSO${x.count === 1 ? '' : 's'} · ${fmt(x.savedAt)}${x.meta?.lotwSyncedAt ? ' · LoTW ✓' : ''}</span>
+            </button>
+            <button class="saved-log-btn" data-act="rename" title="Rename">✎</button>
+            <button class="saved-log-btn" data-act="delete" title="Delete from this device">×</button>
+        </div>`).join('');
+    box.onclick = async (e) => {
+        const btn = e.target.closest('[data-act]'); if (!btn) return;
+        const id = btn.closest('[data-id]').dataset.id;
+        const rec = list.find(x => x.id === id);
+        if (btn.dataset.act === 'open' && id !== currentSessionId) {
+            updateLoadingStatus(true, `Opening ${rec.name}...`, 30);
+            await openSavedSession(id);
+        } else if (btn.dataset.act === 'rename') {
+            const name = prompt('Rename saved log', rec.name);
+            if (name && name.trim()) { await sessions.renameSession(id, name.trim()); renderSavedLogs(); }
+        } else if (btn.dataset.act === 'delete') {
+            if (!confirm(`Delete “${rec.name}” from this browser? Your original ADIF file isn't affected.`)) return;
+            await sessions.deleteSession(id);
+            if (id === currentSessionId) currentSessionId = null;
+            renderSavedLogs();
+        }
+    };
+}
+
+// ─── LoTW sync ───────────────────────────────────────────────────────────────
+
+const LOTW_USER_KEY = 'polarplot_lotw_user', LOTW_PASS_KEY = 'polarplot_lotw_pass';
+
+function initLotwControls() {
+    const user = document.getElementById('lotw-user'), pass = document.getElementById('lotw-pass');
+    const remember = document.getElementById('lotw-remember');
+    if (!user || !pass || !remember) return;
+    const savedUser = localStorage.getItem(LOTW_USER_KEY);
+    if (savedUser) {
+        user.value = savedUser;
+        pass.value = localStorage.getItem(LOTW_PASS_KEY) || '';
+        remember.checked = true;
+    }
+    const persist = () => {
+        if (remember.checked) {
+            localStorage.setItem(LOTW_USER_KEY, user.value.trim());
+            localStorage.setItem(LOTW_PASS_KEY, pass.value);
+        } else {
+            localStorage.removeItem(LOTW_USER_KEY);
+            localStorage.removeItem(LOTW_PASS_KEY);
+        }
+    };
+    remember.addEventListener('change', persist);
+    user.addEventListener('input', () => remember.checked && persist());
+    pass.addEventListener('input', () => remember.checked && persist());
+    document.getElementById('lotw-sync-btn')?.addEventListener('click', syncLotw);
+}
+
+function updateLotwStatus(msg, color) {
+    const el = document.getElementById('lotw-status');
+    if (!el) return;
+    const last = currentSessionMeta.lotwSyncedAt ? `Last synced ${currentSessionMeta.lotwSyncedAt} for this log.` : '';
+    const text = msg || last;
+    el.style.display = text ? 'block' : 'none';
+    el.style.color = color || 'var(--muted)';
+    el.innerHTML = text;
+}
+
+async function syncLotw() {
+    if (!currentQSOs.length) { showTacticalToast('Upload a log first.', 3000); return; }
+    const login = document.getElementById('lotw-user').value.trim();
+    const password = document.getElementById('lotw-pass').value;
+    if (!login || !password) { updateLotwStatus('Enter your LoTW username and password.', '#f59e0b'); return; }
+    const btn = document.getElementById('lotw-sync-btn');
+    const proxyUrl = document.getElementById('cors-proxy')?.value.trim() || 'https://qrz-proxy.m7pxzqrz.workers.dev/';
+    // Incremental after the first sync; step back a day so nothing on the boundary is missed
+    let since = null;
+    if (currentSessionMeta.lotwSyncedAt) {
+        const d = new Date(currentSessionMeta.lotwSyncedAt + 'T00:00:00Z');
+        d.setUTCDate(d.getUTCDate() - 1);
+        since = d.toISOString().slice(0, 10);
+    }
+    btn.disabled = true;
+    btn.textContent = 'SYNCING…';
+    updateLotwStatus(since ? `Fetching confirmations since ${since}… LoTW can be slow.` : 'Fetching all your confirmations… LoTW can take a minute for big logs.', 'var(--acc)');
+    try {
+        const records = parseAdif(await fetchLotwReport({ proxyUrl, login, password, since }));
+        const res = applyLotwConfirmations(currentQSOs, records);
+        repairCoordinates(currentQSOs);
+        currentSessionMeta.lotwSyncedAt = new Date().toISOString().slice(0, 10);
+        scheduleSessionSave();
+        processQSOs(currentQSOs, false);
+        if (globeVisible && globeInstance) updateGlobeData();
+        updateLotwStatus(`✓ ${res.records.toLocaleString()} confirmation${res.records === 1 ? '' : 's'} from LoTW · <b>${res.newlyConfirmed.toLocaleString()}</b> newly confirmed QSOs`
+            + (res.unmatched ? `<br>${res.unmatched.toLocaleString()} LoTW confirmations aren't in this log` : '')
+            + `<br>Synced ${currentSessionMeta.lotwSyncedAt}`, 'var(--acc)');
+        if (res.newlyConfirmed) showTacticalToast(`LoTW: ${res.newlyConfirmed.toLocaleString()} newly confirmed QSOs`, 4000);
+    } catch (e) {
+        updateLotwStatus(`✗ ${e.message}`, '#f87171');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'SYNC LOTW CONFIRMATIONS';
+    }
+}
+
+let _pendingFileCount = 0;
+let _pendingFileNames = [];
 function handleFiles(files) {
-    const file = files[0]; if (!file) return;
-    updateLoadingStatus(true, `Spectrum Analysis: ${file.name}...`, 10);
-    const reader = new FileReader(); reader.onload = (e) => worker.postMessage({ action: 'parse', data: e.target.result }); reader.readAsText(file);
+    const list = [...files];
+    if (!list.length) return;
+    _pendingFileCount = list.length;
+    _pendingFileNames = list.map(f => f.name.replace(/\.(adi|adif)$/i, ''));
+    updateLoadingStatus(true, `Spectrum Analysis: ${list.length === 1 ? list[0].name : `${list.length} logs`}...`, 10);
+    // Multiple logs (e.g. one per callsign) are merged into a single record stream:
+    // strip each file's header and join the bodies so the worker parses them in one pass.
+    Promise.all(list.map(f => f.text())).then(texts => {
+        const bodies = texts.map(t => {
+            const i = t.toUpperCase().indexOf('<EOH>');
+            return i === -1 ? t : t.slice(i + 5);
+        });
+        worker.postMessage({ action: 'parse', data: '<EOH>\n' + bodies.join('\n<EOR>\n') });
+    });
+}
+
+// Drops QSOs that appear in more than one uploaded log (same call, date, minute, band, mode).
+// Duplicates are merged so a confirmation present in either copy is kept.
+function dedupeQSOs(qsos) {
+    const seen = new Map();
+    qsos.forEach(q => {
+        const key = [q.CALL, q.QSO_DATE, (q.TIME_ON || '').slice(0, 4), q.BAND?.toUpperCase(), q.MODE].join('|').toUpperCase();
+        const prev = seen.get(key);
+        if (!prev) { seen.set(key, q); return; }
+        Object.entries(q).forEach(([k, v]) => {
+            if (v && (!prev[k] || (k.endsWith('QSL_RCVD') && v === 'Y'))) prev[k] = v;
+        });
+    });
+    return [...seen.values()];
+}
+
+// Which of my callsigns made this QSO
+function stationOf(q) {
+    return (q.STATION_CALLSIGN || q.OPERATOR || '').trim().toUpperCase();
+}
+
+// One chip per mode in the log (most used first). Click toggles, Ctrl+click shows only that mode.
+function renderModeChips(qsos) {
+    const box = document.getElementById('mode-filter');
+    if (!box) return;
+    const counts = {};
+    qsos.forEach(q => { const m = modeOf(q); counts[m] = (counts[m] || 0) + 1; });
+    const modes = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    document.getElementById('mode-filter-section').style.display = modes.length ? '' : 'none';
+    box.innerHTML = modes.map(m => `<button class="band-chip mode-chip ${hiddenModes.has(m) ? '' : 'active'}" data-mode="${escapeHtml(m)}"
+        title="${counts[m].toLocaleString()} QSOs · Click to toggle · Ctrl+click to show only this mode (again to show all)">${escapeHtml(m)}</button>`).join('');
+    box.onclick = (e) => {
+        const chip = e.target.closest('.mode-chip'); if (!chip) return;
+        const mode = chip.dataset.mode;
+        if (e.ctrlKey || e.metaKey) {
+            const soloed = modes.every(m => (m === mode) !== hiddenModes.has(m));
+            modes.forEach(m => { if (soloed || m === mode) hiddenModes.delete(m); else hiddenModes.add(m); });
+        } else if (hiddenModes.has(mode)) hiddenModes.delete(mode);
+        else hiddenModes.add(mode);
+        box.querySelectorAll('.mode-chip').forEach(c => c.classList.toggle('active', !hiddenModes.has(c.dataset.mode)));
+        try { localStorage.setItem('polarlog_hidden_modes', JSON.stringify([...hiddenModes])); } catch { /* storage blocked */ }
+        processQSOs(currentQSOs, false);
+        if (globeVisible && globeInstance) updateGlobeData();
+    };
 }
 
 function finalizeParsedData(data) {
+    renderModeChips(data);
+    // Station filter only appears when the log(s) contain more than one of my callsigns
+    const stationSel = document.getElementById('filter-station');
+    if (stationSel) {
+        const counts = {};
+        data.forEach(q => { const st = stationOf(q); if (st) counts[st] = (counts[st] || 0) + 1; });
+        const stations = Object.keys(counts).sort();
+        if (!stations.includes(selectedStation)) selectedStation = '';
+        stationSel.innerHTML = '<option value="">All Stations</option>'
+            + stations.map(st => `<option value="${st}"${st === selectedStation ? ' selected' : ''}>${st} (${counts[st]})</option>`).join('');
+        document.getElementById('station-filter-group').style.display = stations.length > 1 ? '' : 'none';
+    }
     const filter = document.getElementById('filter-dxcc');
     if (filter) {
         const dxccs = [...new Set(data.map(q => q.COUNTRY || q.DXCC).filter(Boolean))].sort();
@@ -1964,6 +2321,10 @@ function toggleGlobe() {
         // 3D: Hide signal heatmap toggle (since it doesn't work on globe)
         document.getElementById('heatmap-control-row').style.display = 'none';
         document.getElementById('heatmap-toggle-container').style.display = 'none';
+        document.getElementById('grid-control-row').style.display = 'none';
+        document.getElementById('grid-options').style.display = 'none';
+        document.getElementById('grid-panel')?.classList.remove('visible');
+        updateGridSquares();
 
     } else {
         globeEl.classList.remove('active');
@@ -1977,6 +2338,8 @@ function toggleGlobe() {
         if (hmToggle && hmToggle.checked) {
             document.getElementById('heatmap-toggle-container').style.display = 'flex';
         }
+        document.getElementById('grid-control-row').style.display = 'flex';
+        if (gridMode) { document.getElementById('grid-options').style.display = 'flex'; updateGridSquares(); }
 
         // Dismiss 3D globe popup and contact cards
         hideGlobePopup();
@@ -2229,7 +2592,9 @@ function _buildHeatPoints() {
         if (!q.LAT || !q.LON) return;
         if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return;
         if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
+        if (selectedStation && stationOf(q) !== selectedStation) return;
         if (!activeBands.has(q.BAND?.toUpperCase())) return;
+        if (!modeShown(q) || !activationShown(q)) return;
         if (!dateMatchesRange(q.QSO_DATE)) return;
         if (potaMode && potaFocusCall && q.CALL !== potaFocusCall) return;
 
@@ -2250,6 +2615,104 @@ function _buildHeatPoints() {
     });
 
     return Array.from(locMap.values()).map(pt => [pt.lat, pt.lon, pt.w]);
+}
+
+// A QSO counts as confirmed if any QSL channel says so (LoTW, card, eQSL, or QRZ logbook status)
+function isQSOConfirmed(q) {
+    return q.LOTW_QSL_RCVD === 'Y' || q.QSL_RCVD === 'Y' || q.EQSL_QSL_RCVD === 'Y'
+        || q.APP_QRZLOG_STATUS === 'C';
+}
+
+function _buildGridCells() {
+    const cells = new Map(); // 'IO91' -> { grid, confirmed, qsos, calls:Set }
+    const add = (grid, q) => {
+        if (!/^[A-R]{2}[0-9]{2}/.test(grid)) return;
+        const key = grid.slice(0, 4);
+        let c = cells.get(key);
+        if (!c) cells.set(key, c = { grid: key, confirmed: false, qsos: 0, calls: new Set(), list: [] });
+        c.qsos++;
+        c.list.push(q);
+        c.calls.add(q.CALL);
+        if (isQSOConfirmed(q)) c.confirmed = true;
+    };
+    currentQSOs.forEach(q => {
+        if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return;
+        if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
+        if (selectedStation && stationOf(q) !== selectedStation) return;
+        if (!activeBands.has(q.BAND?.toUpperCase())) return;
+        if (!modeShown(q) || !activationShown(q)) return;
+        if (!dateMatchesRange(q.QSO_DATE)) return;
+        if (potaMode && potaFocusCall && q.CALL !== potaFocusCall) return;
+        // VUCC_GRIDS covers rovers / line & corner contacts spanning several squares
+        const grids = q.VUCC_GRIDS ? q.VUCC_GRIDS.split(',') : [q.GRIDSQUARE || ''];
+        new Set(grids.map(g => g.trim().toUpperCase().slice(0, 4))).forEach(g => add(g, q));
+    });
+    return [...cells.values()].map(c => ({ ...c, calls: [...c.calls] }));
+}
+
+function updateGridSquares() {
+    if (!gridMode || globeVisible) {
+        mapEngine?.setGridSquares(null);
+        mapEngine?.setGridLabelsVisible(false);
+        return;
+    }
+    mapEngine?.setGridLabelsVisible(true);
+    const cells = _buildGridCells();
+    const conf = cells.filter(c => c.confirmed).length;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('grid-stat-worked', cells.length);
+    set('grid-stat-conf', conf);
+    set('grid-stat-unconf', cells.length - conf);
+    const shown = gridMode === 'conf' ? cells.filter(c => c.confirmed)
+                : gridMode === 'unconf' ? cells.filter(c => !c.confirmed)
+                : cells;
+    mapEngine?.setGridSquares(shown, showGridPanel);
+}
+
+function showGridPanel(grid) {
+    const cell = _buildGridCells().find(c => c.grid === grid);
+    if (!cell) return;
+    const qsos = [...cell.list].sort((a, b) =>
+        ((b.QSO_DATE || '') + (b.TIME_ON || '')).localeCompare((a.QSO_DATE || '') + (a.TIME_ON || '')));
+    const confCount = qsos.filter(isQSOConfirmed).length;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+    set('grid-panel-name', grid);
+    const statusEl = document.getElementById('grid-panel-status');
+    if (statusEl) {
+        statusEl.textContent = cell.confirmed ? '● CONFIRMED' : '● WORKED · NOT CONFIRMED';
+        statusEl.style.color = cell.confirmed ? '#22c55e' : '#f59e0b';
+    }
+    set('grid-panel-qsos', qsos.length);
+    set('grid-panel-calls', cell.calls.length);
+    set('grid-panel-conf', confCount);
+
+    const homeLoc = mapEngine?.homeLocation;
+    const hLat = homeLoc?.[0] || parseFloat(document.getElementById('my-lat').value) || 0;
+    const hLon = homeLoc?.[1] || parseFloat(document.getElementById('my-lon').value) || 0;
+    const centre = maidenheadToCoords(grid);
+    set('grid-panel-dist', (hLat || hLon) && centre
+        ? `${calculateDistance(hLat, hLon, centre.lat, centre.lon, currentUnits).toFixed(0)} ${currentUnits}`
+        : 'N/A');
+
+    const td = 'padding:7px 8px;';
+
+    const body = document.getElementById('grid-panel-body');
+    if (body) body.innerHTML = qsos.slice(0, 300).map(q => {
+        const bandColor = BAND_COLORS[q.BAND?.toUpperCase()] || 'var(--acc)';
+        const cfm = isQSOConfirmed(q);
+        return `<tr style="border-bottom:1px solid var(--brd2);">
+            <td style="${td}white-space:nowrap;">${fmtQsoDate(q.QSO_DATE)}<br><span style="color:var(--muted);font-size:0.65rem;">${fmtQsoTime(q.TIME_ON)}</span></td>
+            <td style="${td}font-weight:700;color:${cfm ? '#22c55e' : 'var(--text)'};">${qrzLink(q.CALL, q.CALL)}</td>
+            <td style="${td}font-weight:700;color:${bandColor};white-space:nowrap;">${q.BAND || '--'} / ${q.MODE || '--'}</td>
+            <td style="${td}white-space:nowrap;">${q.RST_SENT || '--'} / ${q.RST_RCVD || '--'}</td>
+            <td style="${td}color:var(--muted);">${(q.GRIDSQUARE || '').toUpperCase() || '--'}</td>
+            <td style="${td}white-space:nowrap;">${qslBadges(q)}</td>
+        </tr>`;
+    }).join('') + (qsos.length > 300 ? `<tr><td colspan="6" style="${td}color:var(--muted);text-align:center;">+${qsos.length - 300} more QSOs</td></tr>` : '');
+
+    document.getElementById('history-panel')?.classList.remove('visible');
+    document.getElementById('grid-panel')?.classList.add('visible');
 }
 
 function updateHeatmap() {
@@ -2286,7 +2749,9 @@ function _rebuildGlobeContacts() {
         if (!q.LAT || !q.LON) return;
         if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return;
         if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return;
+        if (selectedStation && stationOf(q) !== selectedStation) return;
         if (!activeBands.has(q.BAND?.toUpperCase())) return;
+        if (!modeShown(q) || !activationShown(q)) return;
         if (!dateMatchesRange(q.QSO_DATE)) return;
         if (potaMode && potaFocusCall && q.CALL !== potaFocusCall) return;
         if (!contacts[q.CALL]) contacts[q.CALL] = {
@@ -2315,7 +2780,8 @@ function updateGlobeDots() {
         clusterSize: 1, count: c.count, band: c.band,
         qsoData: c.qsos, call: c.call, country: c.country
     }));
-    const dotList = (!clusteringOn || cellDeg === 0)
+    const dotsOn = document.getElementById('chk-dots')?.checked ?? true;
+    const dotList = !dotsOn ? [] : (!clusteringOn || cellDeg === 0)
         ? rawContacts
         : buildGlobeDots(_globeContactList, cellDeg);
 
@@ -2611,6 +3077,138 @@ function exitGlobeFPV() {
 
 // ─── Stats Panels ────────────────────────────────────────────────────────────
 
+// Same filter set the map uses (search, station, country, band, date)
+function qsoPassesFilters(q) {
+    if (searchQuery && !q.CALL.toUpperCase().startsWith(searchQuery)) return false;
+    if (selectedDXCC && (q.COUNTRY || q.DXCC) !== selectedDXCC) return false;
+    if (selectedStation && stationOf(q) !== selectedStation) return false;
+    if (!activeBands.has(q.BAND?.toUpperCase())) return false;
+    if (!modeShown(q) || !activationShown(q)) return false;
+    return dateMatchesRange(q.QSO_DATE);
+}
+
+// QRZ (XML lookup or logbook) knows the station's state, county and zones. Fill them when the
+// log has none, or replace a smart-reader guess — but never overwrite what the user logged.
+function applyQrzExtras(qso, d) {
+    const put = (field, v) => {
+        if (!v || (qso[field] && !qso._inferred?.includes(field))) return;
+        qso[field] = String(v).trim();
+        if (qso._inferred) qso._inferred = qso._inferred.filter(f => f !== field);
+    };
+    put('STATE', d.state); put('CNTY', d.county); put('CQZ', d.cqzone); put('ITUZ', d.ituzone); put('IOTA', d.iota);
+}
+
+// Smart log reader: works out country, continent, CQ/ITU zone and state for QSOs that don't log them
+let _smartReaderRun = null;
+function runSmartReader(announce = false) {
+    const qsos = currentQSOs;
+    _smartReaderRun = enrichQSOs(qsos).then(res => {
+        // The reader may have filled in countries the DXCC card couldn't count at load time
+        if (qsos === currentQSOs) document.getElementById('stat-dxcc').textContent = new Set(qsos.map(q => q.COUNTRY || q.DXCC).filter(Boolean)).size;
+        if (announce && qsos === currentQSOs) {
+            const f = res.filled, parts = [];
+            if (f.CQZ || f.ITUZ) parts.push(`zones for ${Math.max(f.CQZ, f.ITUZ)}`);
+            if (f.STATE) parts.push(`states for ${f.STATE}`);
+            if (f.GRIDSQUARE) parts.push(`grid squares for ${f.GRIDSQUARE}`);
+            if (f.CONT) parts.push(`continents for ${f.CONT}`);
+            if (parts.length) showTacticalToast(`Smart reader filled in ${parts.join(' · ')} QSOs`, 5000);
+        }
+        return res;
+    }).catch(e => console.warn('Smart reader failed:', e));
+    return _smartReaderRun;
+}
+
+async function openFullStats() {
+    if (!currentQSOs.length) { showTacticalToast('Upload a log first.', 3000); return; }
+    // Re-run so anything QRZ resolved since load (new coordinates) is picked up
+    await runSmartReader(false);
+    const homeLoc = mapEngine?.homeLocation;
+    openStatsDashboard(currentQSOs.filter(qsoPassesFilters), currentQSOs.length, {
+        units: currentUnits,
+        home: homeLoc && (homeLoc[0] || homeLoc[1]) ? [homeLoc[0], homeLoc[1]] : null,
+        bandColors: BAND_COLORS,
+        isoOf: q => DXCC_MAP[(q.COUNTRY || '').toUpperCase()] || getISOFromCallsign(q.CALL) || DXCC_MAP[q.DXCC]
+            || (q.LAT && q.LON ? getISOFromCoords(parseFloat(q.LAT), parseFloat(q.LON)) : null),
+        isConfirmed: isQSOConfirmed,
+        qrzLink,
+        geo: await getGeoData(),
+        loadCountries: getCountries,
+        // DXCC entities with the flag/country code Polarplot uses, to split country outlines into entities
+        loadDxccEntities: async () => (await getDxccEntities()).map(e => ({
+            ...e, iso: String(DXCC_MAP[e.name.toUpperCase()] || getISOFromCallsign(e.prefix + '1AA') || '').toLowerCase(),
+        })),
+        pota: currentSessionMeta.pota || null,
+        potaLog: currentSessionMeta.potaLog || null,
+        importPotaLog: (text) => {
+            const res = applyPotaLog(currentQSOs, parseAdif(text));
+            const summary = { importedAt: new Date().toISOString().slice(0, 10), hasRoles: res.hasRoles, hunter: res.hunter, activator: res.activator };
+            if (res.hunter.entries || res.activator.entries) { currentSessionMeta.potaLog = summary; scheduleSessionSave(); }
+            if (res.tagged) processQSOs(currentQSOs, false);
+            return { tagged: res.tagged, summary };
+        },
+        showActivationOnMap: (ref) => setActivationFilter(ref || ''),
+        // Park names + real coordinates for the POTA award maps, cached with the saved log
+        parkInfo: currentSessionMeta.parkInfo || {},
+        loadParks: async (refs) => {
+            const before = Object.keys(currentSessionMeta.parkInfo || {}).length;
+            currentSessionMeta.parkInfo = await fetchParkInfo(refs, currentSessionMeta.parkInfo || {});
+            if (Object.keys(currentSessionMeta.parkInfo).length !== before) scheduleSessionSave();
+            return currentSessionMeta.parkInfo;
+        },
+        potaCall: (document.getElementById('my-call')?.value || '').trim().toUpperCase() || mostUsedStation(),
+        loadPota: async (call) => {
+            // Try the entered callsign first, then the other callsigns in the log (only one of
+            // them may be the POTA.app account, e.g. M7PXZ is linked under M9PXZ)
+            const stations = [...new Set(currentQSOs.map(stationOf).filter(Boolean))];
+            const candidates = [...new Set([(call || '').trim().toUpperCase(), ...stations].filter(Boolean))];
+            let profile = null, firstError = null;
+            for (const c of candidates) {
+                try { profile = await fetchPotaProfile(c); break; } catch (e) { firstError ||= e; }
+            }
+            if (!profile) throw firstError || new Error('Enter a callsign.');
+            const tagged = applyPotaHunterQsos(currentQSOs, profile.hunterQsos);
+            currentSessionMeta.pota = profile;
+            scheduleSessionSave();
+            if (tagged) processQSOs(currentQSOs, false);
+            return { profile, tagged };
+        },
+        tileUrl: mapEngine?.tileBaseUrl,
+        flag: iso => buildFlagImg(iso.toLowerCase(), iso, 40, 'width:28px;height:20px;object-fit:cover;border-radius:3px;display:block;', "this.onerror=null;this.style.display='none';"),
+        showGridsOnMap: () => {
+            if (globeVisible) toggleGlobe();
+            const chk = document.getElementById('chk-grids');
+            if (chk && !chk.checked) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
+        },
+    });
+}
+
+function setActivationFilter(ref) {
+    activationFilter = ref;
+    let banner = document.getElementById('activation-banner');
+    if (ref === null) {
+        banner?.remove();
+    } else {
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'activation-banner';
+            banner.className = 'activation-banner';
+            document.body.appendChild(banner);
+        }
+        const n = currentQSOs.filter(q => { const p = myParks(q); return ref === '' ? p.length : p.includes(ref); }).length;
+        banner.innerHTML = `<span>Showing ${n.toLocaleString()} QSO${n === 1 ? '' : 's'} from ${ref ? `activation of <b>${escapeHtml(ref)}</b>` : '<b>my POTA activations</b>'}</span><button title="Show all QSOs">✕ Show all</button>`;
+        banner.querySelector('button').onclick = () => setActivationFilter(null);
+        if (globeVisible) toggleGlobe();
+    }
+    processQSOs(currentQSOs, true, true);
+    if (globeVisible && globeInstance) updateGlobeData();
+}
+
+function mostUsedStation() {
+    const n = {};
+    currentQSOs.forEach(q => { const s = stationOf(q); if (s) n[s] = (n[s] || 0) + 1; });
+    return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || '';
+}
+
 function openStatsPanel(type) {
     if (!currentQSOs.length) return;
     document.querySelectorAll('.stats-modal.visible').forEach(p => p.classList.remove('visible'));
@@ -2710,8 +3308,9 @@ function renderTotalPanel(container, isTactical = false) {
     const listBody = container.querySelector('#pota-list-body');
     listBody?.querySelectorAll('tr').forEach(tr => {
         tr.addEventListener('click', (e) => {
-            // Don't trigger if they clicked the QRZ link specifically
-            if (e.target.tagName === 'A') return;
+            // In non-tactical mode let the QRZ link navigate normally; in tactical
+            // mode the link opens a new tab so we still want row-selection to fire.
+            if (!isTactical && e.target.tagName === 'A') return;
             const call = tr.dataset.call;
             if (isTactical) {
                 if (potaFocusCall === call) {
@@ -2719,7 +3318,7 @@ function renderTotalPanel(container, isTactical = false) {
                     potaFocusCall = null;
                     listBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
                     document.getElementById('pota-hud-call').textContent = 'SELECT STATION';
-                    document.getElementById('pota-hud-dist').textContent = '0.0 KM';
+                    document.getElementById('pota-hud-dist').textContent = `0.0 ${currentUnits.toUpperCase()}`;
                     processQSOs(currentQSOs, true, true); 
                     return;
                 }
@@ -2924,10 +3523,11 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
     const filtered = qsos.filter(q => {
         const mSearch = !searchQuery || q.CALL.toUpperCase().startsWith(searchQuery);
         const mDXCC = !selectedDXCC || (q.COUNTRY || q.DXCC) === selectedDXCC;
-        const mBand = activeBands.has(q.BAND?.toUpperCase());
+        const mStation = !selectedStation || stationOf(q) === selectedStation;
+        const mBand = activeBands.has(q.BAND?.toUpperCase()) && modeShown(q) && activationShown(q);
         const mDate = dateMatchesRange(q.QSO_DATE);
         const mPota = !potaMode || !potaFocusCall || q.CALL === potaFocusCall;
-        return mSearch && mDXCC && mBand && mDate && mPota;
+        return mSearch && mDXCC && mStation && mBand && mDate && mPota;
     });
     const groups = {};
     filtered.forEach(q => {
@@ -2955,28 +3555,58 @@ function _doProcessQSOs(qsos, shouldFitBounds) {
     if (typeof isResolving !== 'undefined' && isResolving) return;
     if (globeVisible && globeInstance) updateGlobeData();
     if (heatmapMode) updateHeatmap();
+    if (gridMode) updateGridSquares();
     updateLoadingStatus(false);
 }
 
 function showHistoryPanel(history) {
-    const latest = history[0];
+    const qsos = [...history].sort((a, b) =>
+        ((b.QSO_DATE || '') + (b.TIME_ON || '')).localeCompare((a.QSO_DATE || '') + (a.TIME_ON || '')));
+    const latest = qsos[0];
     const homeLoc = mapEngine?.homeLocation;
     const hLat = homeLoc?.[0] || parseFloat(document.getElementById('my-lat').value) || 0;
     const hLon = homeLoc?.[1] || parseFloat(document.getElementById('my-lon').value) || 0;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const distTo = q => (q.LAT && q.LON && hLat && hLon)
+        ? calculateDistance(hLat, hLon, parseFloat(q.LAT), parseFloat(q.LON), currentUnits) : null;
+
     document.getElementById('hist-call').innerHTML = qrzLink(latest.CALL, latest.CALL);
-    document.getElementById('hist-total').textContent = history.length;
-    const loc = latest.COUNTRY || latest.DXCC || '';
-    const locEl = document.getElementById('hist-location');
-    if (locEl) locEl.textContent = loc || 'Biography Vault';
-    const distEl = document.getElementById('hist-dist');
-    if (distEl && hLat && hLon && latest.LAT && latest.LON)
-        distEl.textContent = `${calculateDistance(hLat, hLon, parseFloat(latest.LAT), parseFloat(latest.LON), currentUnits).toFixed(0)} ${currentUnits}`;
-    else if (distEl) distEl.textContent = 'N/A';
-    const formatDate = (raw) => { if (!raw || raw.length !== 8) return raw; return `${raw.substring(6,8)}-${['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][parseInt(raw.substring(4,6))-1] || '??'}-${raw.substring(0,4)}`; };
-    document.getElementById('qso-history-body').innerHTML = history.slice(0, 100).map(q => {
-        let distStr = '--'; if (q.LAT && q.LON && hLat && hLon) distStr = `${calculateDistance(hLat, hLon, parseFloat(q.LAT), parseFloat(q.LON), currentUnits).toFixed(0)} ${currentUnits}`;
-        return `<tr style="border-bottom: 1px solid var(--brd2);"><td style="padding: 8px; font-size: 0.75rem;">${formatDate(q.QSO_DATE)}</td><td style="padding: 8px; font-weight: bold; color: ${BAND_COLORS[q.BAND?.toUpperCase()] || 'var(--acc)'};">${q.BAND} / ${q.MODE}</td><td style="padding: 8px;">${q.RST_SENT || '--'}</td><td style="padding: 8px; color: var(--acc);">${distStr}</td></tr>`;
-    }).join('');
+    const iso = DXCC_MAP[(latest.COUNTRY || '').toUpperCase()] || getISOFromCallsign(latest.CALL) || DXCC_MAP[latest.DXCC]
+        || (latest.LAT && latest.LON ? getISOFromCoords(parseFloat(latest.LAT), parseFloat(latest.LON)) : null);
+    const flagEl = document.getElementById('hist-flag');
+    if (flagEl) flagEl.innerHTML = iso
+        ? buildFlagImg(String(iso).toLowerCase(), latest.COUNTRY || '', 80, 'width:100%;height:100%;object-fit:cover;border-radius:4px;display:block;', "this.onerror=null;this.parentElement.textContent='📡';")
+        : '📡';
+    const place = [latest.COUNTRY || latest.DXCC, latest.STATE, (latest.GRIDSQUARE || '').toUpperCase()].filter(Boolean).join(' · ');
+    set('hist-location', place || 'Biography Vault');
+
+    const confirmed = qsos.filter(isQSOConfirmed).length;
+    const statusEl = document.getElementById('hist-status');
+    if (statusEl) {
+        statusEl.textContent = confirmed ? `● CONFIRMED · ${confirmed} of ${qsos.length} QSO${qsos.length > 1 ? 's' : ''}` : '○ NOT CONFIRMED YET';
+        statusEl.style.color = confirmed ? '#22c55e' : '#f59e0b';
+    }
+    set('hist-total', qsos.length);
+    set('hist-conf', confirmed);
+    set('hist-bands', new Set(qsos.map(q => q.BAND?.toUpperCase()).filter(Boolean)).size);
+    const d = distTo(latest);
+    set('hist-dist', d != null ? `${d.toFixed(0)} ${currentUnits}` : 'N/A');
+
+    const td = 'padding:7px 8px;';
+    document.getElementById('qso-history-body').innerHTML = qsos.slice(0, 200).map(q => {
+        const dist = distTo(q);
+        const extra = [q.STATION_CALLSIGN && `via ${q.STATION_CALLSIGN}`, q.POTA_REF && `POTA ${q.POTA_REF}`, q.SOTA_REF && `SOTA ${q.SOTA_REF}`, q.COMMENT || q.NOTES]
+            .filter(Boolean).join(' · ');
+        return `<tr style="border-bottom:1px solid var(--brd2);">
+            <td style="${td}white-space:nowrap;">${fmtQsoDate(q.QSO_DATE)}<br><span style="color:var(--muted);font-size:0.65rem;">${fmtQsoTime(q.TIME_ON)}${q.TIME_ON ? 'z' : ''}</span></td>
+            <td style="${td}font-weight:700;color:${BAND_COLORS[q.BAND?.toUpperCase()] || 'var(--acc)'};white-space:nowrap;">${q.BAND || '--'} / ${q.SUBMODE || q.MODE || '--'}${q.FREQ ? `<br><span style="color:var(--muted);font-weight:400;font-size:0.65rem;">${parseFloat(q.FREQ).toFixed(3)} MHz</span>` : ''}</td>
+            <td style="${td}white-space:nowrap;">${q.RST_SENT || '--'} / ${q.RST_RCVD || '--'}</td>
+            <td style="${td}color:var(--muted);white-space:nowrap;">${(q.GRIDSQUARE || '--').toUpperCase()}<br><span style="color:var(--acc);font-size:0.65rem;">${dist != null ? `${dist.toFixed(0)} ${currentUnits}` : ''}</span></td>
+            <td style="${td}white-space:nowrap;">${qslBadges(q)}${extra ? `<div style="color:var(--muted);font-size:0.62rem;margin-top:3px;white-space:normal;max-width:190px;">${escapeHtml(extra)}</div>` : ''}</td>
+        </tr>`;
+    }).join('') + (qsos.length > 200 ? `<tr><td colspan="5" style="${td}color:var(--muted);text-align:center;">+${qsos.length - 200} more QSOs</td></tr>` : '');
+    document.getElementById('grid-panel')?.classList.remove('visible');
+    mapEngine?.map.closePopup();
     document.getElementById('history-panel').classList.add('visible');
 }
 

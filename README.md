@@ -2,7 +2,7 @@
 
 ---
 
-Polarplot is a browser-based ADIF log visualizer for amateur radio operators. Drop in your log file, set your home location, and watch every QSO you've ever made render as an interactive dot on a world map, or a spinning 3D globe. Filter by band, drill into contact history, resolve missing coordinates from QRZ, and export a screenshot worth framing. Designed & Created by M7PXZ.
+Polarplot is a browser-based ADIF log visualizer for amateur radio operators. Drop in your log file, set your home location, and watch every QSO you've ever made render as an interactive dot on a world map, or a spinning 3D globe. Filter by band, drill into contact history, resolve missing coordinates from QRZ, and export a screenshot worth framing. Designed & Created by M9PXZ.
 
 Live at **[https://polarplot.net](https://polarplot.net)**
 

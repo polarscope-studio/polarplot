@@ -38,6 +38,8 @@ export class CtyEngine {
             lon: parseFloat(parts[5]),
             offset: parseFloat(parts[6]),
             primaryPrefix: parts[7].replace('*', '').trim(),
+            // '*' marks DARC WAE-only entities (Sicily, Shetland…) that are not separate DXCC entities
+            waeOnly: parts[7].trim().startsWith('*'),
             prefixes: []
           };
           this.entities.push(currentEntity);
@@ -95,26 +97,46 @@ export class CtyEngine {
     }
   }
 
-  resolve(callsign) {
+  /**
+   * Resolve a callsign to its entity / zones / continent.
+   * dxccOnly (default) skips WAE-only entities so IT9xx resolves to Italy, not Sicily.
+   * Returns null for /MM and /AM (no entity).
+   */
+  resolve(callsign, { dxccOnly = true } = {}) {
     if (!callsign || !this.isLoaded) return null;
-    const call = callsign.toUpperCase();
+    const full = callsign.toUpperCase().trim();
+    const usable = e => e && !(dxccOnly && this.entities[e.entityIdx].waeOnly);
 
-    // 1. Check Exact Callsign
-    if (this.callsignMap.has(call)) {
-      const entry = this.callsignMap.get(call);
-      return this.getMergedMetadata(entry);
+    if (usable(this.callsignMap.get(full))) return this.getMergedMetadata(this.callsignMap.get(full));
+
+    const prefixPart = CtyEngine.prefixPart(full);
+    if (!prefixPart) return null;
+    if (prefixPart !== full && usable(this.callsignMap.get(prefixPart))) return this.getMergedMetadata(this.callsignMap.get(prefixPart));
+
+    // Longest prefix match
+    for (let i = prefixPart.length; i >= 1; i--) {
+      const entry = this.prefixMap.get(prefixPart.substring(0, i));
+      if (usable(entry)) return this.getMergedMetadata(entry);
     }
-
-    // 2. Longest Prefix Match
-    for (let i = call.length; i >= 1; i--) {
-      const pref = call.substring(0, i);
-      if (this.prefixMap.has(pref)) {
-        const entry = this.prefixMap.get(pref);
-        return this.getMergedMetadata(entry);
-      }
-    }
-
     return null;
+  }
+
+  /**
+   * The part of a callsign that decides its entity:
+   *   M9PXZ/P → M9PXZ · EA8/M9PXZ → EA8 · W1ABC/6 → W6ABC · G4ABC/MM → null
+   */
+  static prefixPart(call) {
+    const SKIP = new Set(['P', 'M', 'QRP', 'QRPP', 'A', 'R', 'B', 'J', 'LH', 'PM', 'LGT', 'N', 'T']);
+    let parts = call.split('/').filter(Boolean);
+    // Maritime / aeronautical mobile is a SUFFIX (LY3X/MM). As a prefix, MM is Scotland (MM/LY3X).
+    if (parts.length > 1 && /^(MM|AM)$/.test(parts[parts.length - 1])) return null;
+    parts = parts.filter(p => !SKIP.has(p));
+    if (!parts.length) return null;
+    if (parts.length === 1) return parts[0];
+    const digit = parts.find(p => /^\d$/.test(p));
+    const rest = parts.filter(p => p !== digit);
+    if (digit && rest.length === 1) return rest[0].replace(/\d(?=[A-Z]*$)/, digit); // call-area change
+    return rest.reduce((a, b) => (b.length < a.length ? b : a)); // shorter part is the prefix
   }
 
   getMergedMetadata(entry) {
